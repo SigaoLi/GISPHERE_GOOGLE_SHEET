@@ -1,0 +1,27 @@
+# GISource 自动化系统依赖包
+# 适用于 Python 3.7+
+
+# 数据处理
+pandas>=1.3.0
+numpy>=1.21.0
+
+# Google API
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.5.0
+google-auth>=2.0.0
+
+# 数据库
+mysql-connector-python>=8.0.0
+
+# 工具库
+pytz>=2021.1
+pycountry>=20.7.3
+inflect>=5.3.0
+configparser>=5.0.0
+
+# 注意事项:
+# 1. 运行前请确保安装了所有依赖: pip install -r requirements.txt
+# 2. Python版本要求: 3.7 或更高
+# 3. 跨平台支持: Windows, macOS, Linux
+

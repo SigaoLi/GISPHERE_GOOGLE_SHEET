@@ -1,0 +1,22 @@
+GISource 自动化系统
+
+版本：2.0.0
+发布日期：2025-11-29
+状态：生产就绪
+
+主要特性：
+- 完全模块化的Python架构
+- 跨平台支持（Windows/macOS/Linux）
+- 一键运行（python main.py）
+- 完整的文档和示例
+- 生产环境优化
+
+从 v1.0 (Jupyter Notebook) 升级说明：
+1. 安装依赖：pip install -r requirements.txt
+2. 配置凭据文件（参考.example文件）
+3. 运行：python main.py
+
+更新历史：
+- v2.0.0 (2025-11-29): 重构为模块化Python项目
+- v1.0.0: 原始Jupyter Notebook版本
+
