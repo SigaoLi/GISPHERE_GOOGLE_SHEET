@@ -69,7 +69,7 @@ def get_operator_name():
     """获取操作员姓名"""
     # 可以从环境变量或配置文件读取，这里使用默认值
     # 如果需要动态输入，可以使用: return input("请输入您的姓名: ")
-    return "李思高"  # 默认操作员
+    return "张三"  # 默认操作员
 
 
 def load_and_clean_data():
@@ -506,4 +506,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
