@@ -673,6 +673,7 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 如有问题，请联系：
 - **GISource团队**
+- **Email**: gisphere@gmail.com
 
 或查看：
 1. 本 README 文档
@@ -712,4 +713,3 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 **最后更新**: 2025-11-29  
 **维护者**: GISource团队  
 **项目状态**: 生产就绪 ✅
-

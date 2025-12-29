@@ -6,6 +6,7 @@ import pickle
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from config import (
     SCOPES_SHEETS, 
     SPREADSHEET_ID, 
@@ -23,7 +24,13 @@ def authorize_credentials():
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                # Token刷新失败（可能被撤销），需要重新授权
+                print("Token已失效，正在打开浏览器进行重新授权...")
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES_SHEETS)
+                creds = flow.run_local_server(port=0)
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES_SHEETS)
             creds = flow.run_local_server(port=0)

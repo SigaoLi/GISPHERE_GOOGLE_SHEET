@@ -267,3 +267,7 @@ LABEL_COLUMNS = ["Physical_Geo", "Human_Geo", "Urban", "GIS", "RS", "GNSS"]
 # 必填列
 REQUIRED_COLUMNS = ["Source", "Deadline", "Country_CN", "University_CN", "University_EN", "Direction"]
 
+# LLM 配置
+OPENAI_MODEL = "gpt-5-chat-latest"
+OPENAI_BASE_URL = "https://oneapi.gisphere.info/v1"
+

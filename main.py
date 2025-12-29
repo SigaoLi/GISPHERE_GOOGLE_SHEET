@@ -3,6 +3,20 @@
 协调所有模块的运行流程
 支持跨平台（Windows, macOS, Linux）
 """
+# 强制使用IPv4连接（解决macOS/VPN环境下IPv6连接超时问题）
+# 可通过环境变量 FORCE_IPV4=false 禁用此功能
+# 默认启用，因为IPv4在所有平台上都可用，且能解决IPv6连接问题
+import os
+import socket
+
+_FORCE_IPV4 = os.getenv('FORCE_IPV4', 'true').lower() == 'true'
+
+if _FORCE_IPV4:
+    _real_getaddrinfo = socket.getaddrinfo
+    def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        return _real_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    socket.getaddrinfo = ipv4_only_getaddrinfo
+
 import sys
 import pandas as pd
 import numpy as np
@@ -20,7 +34,8 @@ from utils import (
     read_group_members, 
     adjust_data_to_columns,
     is_date,
-    calculate_week_range
+    calculate_week_range,
+    column_index_to_letter
 )
 from google_sheets import (
     fetch_data, 
@@ -48,7 +63,7 @@ from data_processor import (
     generate_wechat_group_text,
     convert_to_wechat_format
 )
-from google_docs import add_wechat_content_to_doc
+from google_docs import add_wechat_content_to_doc, add_wechat_content_to_doc_sorted
 
 # 禁止显示警告
 warnings.filterwarnings('ignore')
@@ -69,7 +84,7 @@ def get_operator_name():
     """获取操作员姓名"""
     # 可以从环境变量或配置文件读取，这里使用默认值
     # 如果需要动态输入，可以使用: return input("请输入您的姓名: ")
-    return "张三"  # 默认操作员
+    return "李思高"  # 默认操作员
 
 
 def load_and_clean_data():
@@ -84,10 +99,23 @@ def load_and_clean_data():
     unfilled_data = pd.DataFrame(unfilled_data_adjusted, columns=unfilled_headers)
     
     # 转换截止日期并删除过期行
-    unfilled_data['Deadline'] = pd.to_datetime(unfilled_data['Deadline'], errors='coerce')
+    # 先保存原始Deadline值（包括"Soon"字符串）
+    original_deadlines = unfilled_data['Deadline'].copy()
+    
+    # 只对非"Soon"的值进行日期转换
+    mask_not_soon = ~unfilled_data['Deadline'].astype(str).str.strip().isin(['Soon', 'soon', 'SOON', '尽快申请'])
+    unfilled_data.loc[mask_not_soon, 'Deadline'] = pd.to_datetime(
+        unfilled_data.loc[mask_not_soon, 'Deadline'], 
+        errors='coerce'
+    )
+    
+    # 获取当前日期（时区无关的date对象）
     now = datetime.now(CHINA_TZ).date()
+    
+    # 找出过期的行（排除"Soon"行）
     rows_to_delete = unfilled_data.index[
-        (unfilled_data['Deadline'].dt.date < now) & (unfilled_data['Deadline'] != 'Soon')
+        (unfilled_data['Deadline'].notna()) & 
+        (unfilled_data['Deadline'].apply(lambda x: x.date() if hasattr(x, 'date') else None) < now)
     ].tolist()
     rows_to_delete = [x + 1 for x in rows_to_delete]
     
@@ -224,9 +252,9 @@ def select_row_to_process(unfilled_data):
     # 转换Deadline为日期
     now = datetime.now(CHINA_TZ).date()
     
-    # 识别非日期行和Soon行
-    non_date_rows = filtered_data[~filtered_data['Deadline'].apply(is_date)]
-    soon_rows = non_date_rows[non_date_rows['Deadline'] == 'Soon']
+    # 识别Soon行（在转换为datetime之前）
+    deadline_str = filtered_data['Deadline'].astype(str).str.strip()
+    soon_rows = filtered_data[deadline_str.isin(['Soon', 'soon', 'SOON', '尽快申请'])]
     
     # 移除Soon行进行截止日期计算
     deadline_data = filtered_data[~filtered_data.index.isin(soon_rows.index)]
@@ -277,7 +305,7 @@ def select_row_to_process(unfilled_data):
         return None, filtered_data
 
 
-def validate_selected_row(selected_row, group_members):
+def validate_selected_row(selected_row, group_members, unfilled_data):
     """验证选中的行是否有错误"""
     print("步骤 5: 验证数据完整性...")
     
@@ -288,10 +316,35 @@ def validate_selected_row(selected_row, group_members):
     current_date_china = datetime.now(CHINA_TZ).strftime("%Y-%m-%d")
     
     if error_value == '1':
-        source_content = selected_row["Source"].iloc[0]
-        university_content = selected_row["University_CN"].iloc[0]
-        direction_content = selected_row["Direction"].iloc[0]
-        verifier_name = selected_row["Verifier"].iloc[0]
+        # 安全地获取字段内容，如果为空则使用默认值
+        source_content = selected_row["Source"].iloc[0] if pd.notna(selected_row["Source"].iloc[0]) else "未填写"
+        university_content = selected_row["University_CN"].iloc[0] if pd.notna(selected_row["University_CN"].iloc[0]) else "未填写"
+        direction_content = selected_row["Direction"].iloc[0] if pd.notna(selected_row["Direction"].iloc[0]) else "未填写"
+        verifier_name = selected_row["Verifier"].iloc[0] if pd.notna(selected_row["Verifier"].iloc[0]) else "未知"
+        
+        # 更新Unfilled表中的Error列为'1'
+        source_to_update = selected_row['Source'].values[0]
+        direction_to_update = selected_row['Direction'].values[0]
+        
+        # 找到对应的行索引
+        matching_rows = unfilled_data.index[
+            (unfilled_data['Source'] == source_to_update) & 
+            (unfilled_data['Direction'] == direction_to_update)
+        ].tolist()
+        
+        if matching_rows:
+            row_index = matching_rows[0]
+            # 获取Error列的索引（假设在表头中）
+            unfilled_headers = fetch_data('Unfilled')[0]
+            if 'Error' in unfilled_headers:
+                error_col_index = unfilled_headers.index('Error')
+                error_col_letter = column_index_to_letter(error_col_index)
+                # 更新Google Sheets中的Error列（行号+2是因为：+1是表头，+1是从0开始）
+                range_name = f'Unfilled!{error_col_letter}{row_index + 2}'
+                update_data_in_sheet(range_name, [['1']])
+                print(f"✓ 已将Error列更新为'1' (位置: {range_name})")
+        else:
+            print(f"⚠ 警告：无法在Unfilled表中找到匹配的行来更新Error列")
         
         if verifier_name in group_members:
             receiver_email = group_members[verifier_name]
@@ -302,7 +355,7 @@ def validate_selected_row(selected_row, group_members):
             print(f"⚠ 发现错误，已发送邮件通知 {verifier_name}")
             return False
         else:
-            print(f"⚠ 验证者 {verifier_name} 不在组员列表中")
+            print(f"⚠ 验证者 {verifier_name} 不在组员列表中，跳过邮件通知")
             return False
     
     print("✓ 数据验证通过\n")
@@ -424,8 +477,17 @@ def add_to_wechat_official_account(selected_row, abbreviation):
     week_start, week_end = calculate_week_range()
     date_subtitle = f"Week: {week_start} to {week_end}"
     
-    # 添加到文档
-    result_message = add_wechat_content_to_doc(wechat_template_output, date_subtitle)
+    # 添加到文档（使用排序功能）
+    try:
+        result_message = add_wechat_content_to_doc_sorted(
+            wechat_template_output, 
+            date_subtitle, 
+            selected_row.iloc[0]
+        )
+    except Exception as e:
+        print(f"⚠ 排序插入失败，使用简单追加: {e}")
+        result_message = add_wechat_content_to_doc(wechat_template_output, date_subtitle)
+    
     print(f"✓ {result_message}\n")
     
     print("微信公众号内容:")
@@ -463,7 +525,7 @@ def main():
             return
         
         # 步骤5: 验证数据
-        if not validate_selected_row(selected_row, group_members):
+        if not validate_selected_row(selected_row, group_members, unfilled_data):
             print("程序结束")
             return
         
@@ -506,5 +568,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

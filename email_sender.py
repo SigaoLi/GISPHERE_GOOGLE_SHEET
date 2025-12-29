@@ -83,7 +83,7 @@ def send_error_notification(receiver_email, receiver_name, source_content, unive
     subject = f"GISource信息错误提醒 - {current_date_china} - {direction_content}"
     body = (
         f"{receiver_name}同学您好，\n\n"
-        f"您填写的 \"{university_content}-{direction_content}\" 消息有误，请及时更正。\n\n"
+        f"您审核的 \"{university_content}-{direction_content}\" 消息有误，请及时更正。\n\n"
         f"消息链接：{source_content}"
     )
     
