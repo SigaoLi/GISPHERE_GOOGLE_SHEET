@@ -1,0 +1,44 @@
+# GISource 项目 .gitignore
+
+# 凭据文件 - 敏感信息，不要提交到版本控制
+keys/
+!keys/*.example
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志文件
+*.log
+
+# 日志文件夹（保留文件夹结构，但忽略日志文件内容）
+logs/
+llm_logs/
+
+# 临时文件
+*.tmp
+*.bak
+

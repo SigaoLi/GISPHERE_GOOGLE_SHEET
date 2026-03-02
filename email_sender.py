@@ -2,9 +2,14 @@
 邮件发送模块 - 处理SMTP邮件发送
 """
 import smtplib
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import EMAIL_CREDENTIALS_FILE, SMTP_SERVER, SMTP_PORT
+
+# 重试配置
+MAX_RETRY_ATTEMPTS = 2  # 最大尝试次数（包括首次）
+RETRY_DELAY_SECONDS = 3  # 重试前等待秒数
 
 
 def read_email_credentials():
@@ -30,37 +35,52 @@ def read_email_credentials():
 
 def send_email(receiver_email, receiver_name, subject, custom_body):
     """
-    发送邮件
+    发送邮件（带自动重试）
     Args:
         receiver_email: 收件人邮箱
         receiver_name: 收件人姓名
         subject: 邮件主题
         custom_body: 邮件正文
+    Returns:
+        bool: 邮件是否发送成功
     """
-    try:
-        # 读取SMTP凭据
-        username, app_password = read_email_credentials()
-        
-        # 创建邮件
-        message = MIMEMultipart()
-        message["From"] = username
-        message["To"] = receiver_email
-        message["Subject"] = subject
-        message.attach(MIMEText(custom_body, "plain", "utf-8"))
-        
-        # 发送邮件
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(username, app_password)
-        server.send_message(message)
-        server.quit()
-        
-        print(f"Email sent successfully to {receiver_name} ({receiver_email})")
-        return True
+    last_error = None
     
-    except Exception as e:
-        print(f"Failed to send email to {receiver_name}: {e}")
-        return False
+    for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+        try:
+            # 读取SMTP凭据
+            username, app_password = read_email_credentials()
+            
+            # 创建邮件
+            message = MIMEMultipart()
+            message["From"] = username
+            message["To"] = receiver_email
+            message["Subject"] = subject
+            message.attach(MIMEText(custom_body, "plain", "utf-8"))
+            
+            # 发送邮件
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30)
+            server.starttls()
+            server.login(username, app_password)
+            server.send_message(message)
+            server.quit()
+            
+            if attempt > 1:
+                print(f"Email sent successfully to {receiver_name} ({receiver_email}) [重试第{attempt-1}次成功]")
+            else:
+                print(f"Email sent successfully to {receiver_name} ({receiver_email})")
+            return True
+        
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_RETRY_ATTEMPTS:
+                print(f"Failed to send email to {receiver_name} (attempt {attempt}/{MAX_RETRY_ATTEMPTS}): {e}")
+                print(f"Retrying in {RETRY_DELAY_SECONDS} seconds...")
+                time.sleep(RETRY_DELAY_SECONDS)
+            else:
+                print(f"Failed to send email to {receiver_name} after {MAX_RETRY_ATTEMPTS} attempts: {last_error}")
+    
+    return False
 
 
 def send_reminder_emails(group_members):
@@ -79,7 +99,11 @@ def send_reminder_emails(group_members):
 
 def send_error_notification(receiver_email, receiver_name, source_content, university_content, 
                            direction_content, current_date_china):
-    """发送错误通知邮件"""
+    """发送错误通知邮件
+    
+    Returns:
+        bool: 邮件发送是否成功
+    """
     subject = f"GISource信息错误提醒 - {current_date_china} - {direction_content}"
     body = (
         f"{receiver_name}同学您好，\n\n"
@@ -87,12 +111,16 @@ def send_error_notification(receiver_email, receiver_name, source_content, unive
         f"消息链接：{source_content}"
     )
     
-    send_email(receiver_email, receiver_name, subject, body)
+    return send_email(receiver_email, receiver_name, subject, body)
 
 
 def send_wechat_notification(receiver_email, receiver_name, text_output, 
                             direction_content, current_date_china):
-    """发送微信群信息通知邮件"""
+    """发送微信群信息通知邮件
+    
+    Returns:
+        bool: 邮件发送是否成功
+    """
     subject = f"微信群信息发送通知 - {current_date_china} - {direction_content}"
     email_body = (
         f"{receiver_name}同学您好，\n\n"
@@ -100,5 +128,5 @@ def send_wechat_notification(receiver_email, receiver_name, text_output,
         f"{text_output}"
     )
     
-    send_email(receiver_email, receiver_name, subject, email_body)
+    return send_email(receiver_email, receiver_name, subject, email_body)
 

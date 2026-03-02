@@ -23,12 +23,13 @@ CHINA_TZ = pytz.timezone('Asia/Shanghai')
 
 # 文件路径配置（跨平台兼容）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
-TOKEN_PICKLE_FILE = os.path.join(BASE_DIR, 'token.pickle')
-TOKEN_JSON_FILE = os.path.join(BASE_DIR, 'token.json')
-EMAIL_CREDENTIALS_FILE = os.path.join(BASE_DIR, 'email_credentials.txt')
-GROUP_MEMBERS_FILE = os.path.join(BASE_DIR, 'group_members.txt')
-SQL_CREDENTIALS_FILE = os.path.join(BASE_DIR, 'sql_credentials.txt')
+KEYS_DIR = os.path.join(BASE_DIR, 'keys')
+CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'credentials.json')
+TOKEN_PICKLE_FILE = os.path.join(KEYS_DIR, 'token.pickle')
+TOKEN_JSON_FILE = os.path.join(KEYS_DIR, 'token.json')
+EMAIL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'email_credentials.txt')
+GROUP_MEMBERS_FILE = os.path.join(KEYS_DIR, 'group_members.txt')
+SQL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'sql_credentials.txt')
 
 # SMTP配置
 SMTP_SERVER = "smtp.gmail.com"
@@ -271,3 +272,6 @@ REQUIRED_COLUMNS = ["Source", "Deadline", "Country_CN", "University_CN", "Univer
 OPENAI_MODEL = "gpt-5-chat-latest"
 OPENAI_BASE_URL = "https://oneapi.gisphere.info/v1"
 
+# 日志文件夹路径
+LLM_LOGS_DIR = os.path.join(BASE_DIR, 'llm_logs')
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')

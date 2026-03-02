@@ -134,6 +134,67 @@ def calculate_week_range():
     return start_of_cycle.strftime('%Y-%m-%d'), end_of_cycle.strftime('%Y-%m-%d')
 
 
+def calculate_period_number(week_start, week_end=None):
+    """根据周期的起始日期计算期数（第XXX期）
+    
+    期数计算规则：
+    - 基准日期 2025-11-30（第131期的起始日期）
+    - Week: 2026-01-11 to 2026-01-24 是第134期
+    - 每隔14天期数增加1
+    
+    Args:
+        week_start: 周期起始日期，格式为 'YYYY-MM-DD' 或 date 对象
+        week_end: 周期结束日期（可选，未使用）
+    
+    Returns:
+        int: 期数
+    
+    Examples:
+        calculate_period_number('2025-11-30') -> 131
+        calculate_period_number('2026-01-11') -> 134
+        calculate_period_number('2026-01-25') -> 135
+    """
+    # 基准日期：2025-11-30（周日）- 第131期的起始日期
+    base_date = date(2025, 11, 30)
+    base_period_number = 131  # 2025-11-30 是第131期
+    
+    # 处理输入日期格式
+    if isinstance(week_start, str):
+        start_date = datetime.strptime(week_start, '%Y-%m-%d').date()
+    elif isinstance(week_start, datetime):
+        start_date = week_start.date()
+    else:
+        start_date = week_start
+    
+    # 计算距离基准日期的天数
+    days_diff = (start_date - base_date).days
+    
+    # 计算期数差异（每14天一期）
+    period_diff = days_diff // 14
+    
+    return base_period_number + period_diff
+
+
+def format_period_title(week_start, week_end):
+    """格式化周期标题，包含期数
+    
+    Args:
+        week_start: 周期起始日期，格式为 'YYYY-MM-DD'
+        week_end: 周期结束日期，格式为 'YYYY-MM-DD'
+    
+    Returns:
+        str: 格式化的周期标题，如 "海外资讯 134 | 2026.01.11 - 2026.01.24"
+    
+    Examples:
+        format_period_title('2026-01-11', '2026-01-24') -> "海外资讯 134 | 2026.01.11 - 2026.01.24"
+        format_period_title('2026-01-25', '2026-02-07') -> "海外资讯 135 | 2026.01.25 - 2026.02.07"
+    """
+    period_number = calculate_period_number(week_start)
+    start_dot = week_start.replace('-', '.')
+    end_dot = week_end.replace('-', '.')
+    return f"海外资讯 {period_number} | {start_dot} - {end_dot}"
+
+
 def adjust_data_to_columns(data, column_headers):
     """调整数据列数以匹配标题行"""
     adjusted_data = []

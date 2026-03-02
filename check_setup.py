@@ -116,10 +116,10 @@ def main():
     print("\n配置文件检查:")
     # 配置文件（必需）
     config_files = [
-        ('group_members.txt', '组员信息'),
-        ('email_credentials.txt', '邮箱凭据'),
-        ('sql_credentials.txt', '数据库凭据'),
-        ('credentials.json', 'Google API凭据')
+        ('keys/group_members.txt', '组员信息'),
+        ('keys/email_credentials.txt', '邮箱凭据'),
+        ('keys/sql_credentials.txt', '数据库凭据'),
+        ('keys/credentials.json', 'Google API凭据')
     ]
     
     config_ok = []
@@ -151,16 +151,17 @@ def main():
     
     if not config_passed:
         print("\n⚠️  配置文件缺失！请按以下步骤配置：")
+        print("   注意：所有凭据文件现在都应放在 'keys' 文件夹中")
         print("\n1. 配置Google API:")
         print("   - 从Google Cloud Console下载credentials.json")
-        print("   - 放在项目根目录")
+        print("   - 放在 keys/ 目录中")
         print("\n2. 配置邮箱:")
-        print("   - 复制 email_credentials.txt.example")
-        print("   - 重命名为 email_credentials.txt")
+        print("   - 复制 keys/email_credentials.txt.example")
+        print("   - 重命名为 keys/email_credentials.txt")
         print("   - 填写邮箱和应用专用密码")
         print("\n3. 配置数据库:")
-        print("   - 复制 sql_credentials.txt.example")
-        print("   - 重命名为 sql_credentials.txt")
+        print("   - 复制 keys/sql_credentials.txt.example")
+        print("   - 重命名为 keys/sql_credentials.txt")
         print("   - 填写数据库连接信息")
         print("\n详细说明请参考 QUICKSTART.md")
         return False

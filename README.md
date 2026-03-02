@@ -82,7 +82,8 @@ pip3 install -r requirements.txt
    - Google Docs API
 4. 创建OAuth 2.0凭据（类型：桌面应用）
 5. 下载JSON文件，重命名为 `credentials.json`
-6. 将 `credentials.json` 放在项目根目录
+6. 创建 `keys` 文件夹（如果不存在）
+7. 将 `credentials.json` 放在 `keys/` 目录中
 
 #### 步骤 3: 配置邮箱（1分钟）
 
@@ -97,14 +98,16 @@ pip3 install -r requirements.txt
 
 Windows:
 ```bash
-copy email_credentials.txt.example email_credentials.txt
-notepad email_credentials.txt
+mkdir keys
+copy keys\email_credentials.txt.example keys\email_credentials.txt
+notepad keys\email_credentials.txt
 ```
 
 macOS/Linux:
 ```bash
-cp email_credentials.txt.example email_credentials.txt
-nano email_credentials.txt
+mkdir -p keys
+cp keys/email_credentials.txt.example keys/email_credentials.txt
+nano keys/email_credentials.txt
 ```
 
 编辑内容为：
@@ -117,14 +120,14 @@ xxxx xxxx xxxx xxxx
 
 Windows:
 ```bash
-copy sql_credentials.txt.example sql_credentials.txt
-notepad sql_credentials.txt
+copy keys\sql_credentials.txt.example keys\sql_credentials.txt
+notepad keys\sql_credentials.txt
 ```
 
 macOS/Linux:
 ```bash
-cp sql_credentials.txt.example sql_credentials.txt
-nano sql_credentials.txt
+cp keys/sql_credentials.txt.example keys/sql_credentials.txt
+nano keys/sql_credentials.txt
 ```
 
 编辑内容：
@@ -185,6 +188,7 @@ Google_Sheet/
 ├── ⚙️ 核心模块
 │   ├── config.py                  # 配置管理（常量、字典）
 │   ├── utils.py                   # 工具函数
+│   ├── logger.py                  # 日志记录及终端输出捕获
 │   ├── data_processor.py          # 数据处理和格式转换
 │   ├── google_sheets.py           # Google Sheets API
 │   ├── google_docs.py             # Google Docs API
@@ -192,16 +196,19 @@ Google_Sheet/
 │   └── email_sender.py            # 邮件发送功能
 │
 ├── 📋 配置文件（需手动创建）
-│   ├── credentials.json           # Google API凭据
-│   ├── email_credentials.txt      # 邮箱凭据
-│   ├── group_members.txt          # 组员信息
-│   └── sql_credentials.txt        # 数据库凭据
+│   └── keys/                   # 密钥文件夹
+│       ├── credentials.json        # Google API凭据
+│       ├── email_credentials.txt   # 邮箱凭据
+│       ├── group_members.txt       # 组员信息
+│       └── sql_credentials.txt     # 数据库凭据
 │
 ├── 🔐 认证文件（自动生成）
-│   ├── token.pickle               # Google API令牌
-│   └── token.json                 # Google API令牌
+│   ├── keys/token.pickle           # Google API令牌
+│   └── keys/token.json             # Google API令牌
 │
 └── 📚 其他
+    ├── logs/                      # 运行日志归档目录（自动生成）
+    ├── llm_logs/                  # LLM对话记录目录（自动生成）
     ├── requirements.txt           # Python依赖
     ├── .gitignore                 # Git配置
     ├── VERSION.txt                # 版本信息
@@ -297,6 +304,11 @@ python check_setup.py && python main.py
                   GISource 自动化系统                      
 ============================================================
 
+✓ 距上次运行 5 分 30 秒，自动使用缓存操作员: 张三
+预检查: 确保当前周期标题存在...
+   当前周期: 【2025年11月24日 - 2025年11月30日】
+✓ 当前周期标题已存在
+
 步骤 1: 从Google Sheets获取数据...
 ✓ 数据加载完成
 
@@ -319,10 +331,13 @@ python check_setup.py && python main.py
 ✓ Google Sheets更新完成
 
 步骤 8: 生成微信消息...
-✓ 已发送微信消息通知
+✓ 已生成微信群消息内容和职位缩写
 
 步骤 9: 添加到微信公众号文档...
-✓ Job listing added to the document
+✓ 成功将信息插入到文档适当位置
+
+步骤 10: 发送微信群消息邮件通知...
+✓ 已发送微信消息通知到 张三
 
 ============================================================
                     所有步骤完成！
@@ -487,15 +502,18 @@ Google Sheets (Unfilled)
 
 ### 详细步骤说明
 
-1. **数据加载**: 从Google Sheets获取Unfilled和Filled数据，删除过期行
-2. **更新大学信息**: 从数据库匹配并填充缺失的大学中文名称
-3. **检查新大学**: 将新大学添加到Universities表
-4. **智能选择**: 优先选择"Soon"截止的数据（80%概率）
-5. **数据验证**: 检查必填字段，有误发送邮件通知
-6. **数据库插入**: 生成新Event_ID并插入GISource表
-7. **更新表格**: 从Unfilled移到Filled
-8. **微信消息**: 生成微信群消息，发送邮件通知
-9. **公众号文档**: 添加格式化内容到Google Docs
+**预检查**: 确保当前周期的日期标题（按本周范围动态生成）存在于指定 Google 文档中。同时确认操作人员身份（支持30分钟内免输缓存）。
+
+1. **数据加载**: 从Google Sheets获取Unfilled和Filled数据，检查删除过期行及与Filled表中重复的数据（基于特定列对比）。
+2. **更新大学信息**: 从数据库匹配并自动填充缺失的大学中文名称以及国家中文名称。
+3. **检查新大学**: 将新大学添加到Universities表。
+4. **智能选择**: 优先级算法选择数据（80%为"Soon"期限数据，10%为最近期限数据，10%随机有效行）。
+5. **数据验证**: 检查必填字段，若发现错误自动将表内 Error 列标为1，并发送邮件通知验证者。
+6. **数据库插入**: 生成新Event_ID并插入目标MySQL数据库表。
+7. **更新表格**: 将已处理的数据行从 Unfilled 移到 Filled 工作表内。
+8. **生成微信内容**: 使用 LLM (如果配置允许) 或内部逻辑生成职位缩写及微信群消息。
+9. **公众号文档**: 依据职位缩写和周期标题，将格式化后内容以字典序平滑插入至Google Docs。
+10. **邮件群发通知**: 给指定操作人员或主群发送整理好的微信文案。
 
 ---
 
@@ -616,14 +634,15 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ### 代码结构
 
-- `config.py` - 所有配置和常量
+- `config.py` - 所有配置和常量（包含 LLM 接口及 IPv4 强制开关定义）
 - `utils.py` - 通用工具函数
+- `logger.py` - 日志模块（结构化运行日志并写入文件，重定向终端流）
 - `google_sheets.py` - Google Sheets操作
 - `google_docs.py` - Google Docs操作
 - `database.py` - 数据库操作
 - `email_sender.py` - 邮件功能
-- `data_processor.py` - 数据处理逻辑
-- `main.py` - 主程序流程
+- `data_processor.py` - 数据处理逻辑（含缩写与微信内容生成）
+- `main.py` - 主程序流程的10步骤调度
 
 ### 最佳实践
 
@@ -651,11 +670,11 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 ### 凭据管理
 
 以下文件包含敏感信息，已被 `.gitignore` 保护：
-- `credentials.json` - Google API凭据
-- `token.pickle` - Google Sheets令牌
-- `token.json` - Google Docs令牌
-- `email_credentials.txt` - 邮箱密码
-- `sql_credentials.txt` - 数据库密码
+- `keys/credentials.json` - Google API凭据
+- `keys/token.pickle` - Google Sheets令牌
+- `keys/token.json` - Google Docs令牌
+- `keys/email_credentials.txt` - 邮箱密码
+- `keys/sql_credentials.txt` - 数据库密码
 
 **请勿将这些文件提交到版本控制系统！**
 
