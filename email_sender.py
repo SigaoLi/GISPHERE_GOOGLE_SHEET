@@ -2,21 +2,50 @@
 邮件发送模块 - 处理SMTP邮件发送
 """
 import configparser
+import os
 import smtplib
 import time
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import (
     EMAIL_CREDENTIALS_FILE,
+    FAILED_EMAIL_LOG_FILE,
     GMAIL_SMTP_SERVER,
     GMAIL_SMTP_PORT,
+    GMAIL_SMTP_USE_SSL,
     QQMAIL_SMTP_SERVER,
     QQMAIL_SMTP_PORT,
+    QQMAIL_SMTP_USE_SSL,
 )
 
 # 重试配置
 MAX_RETRY_ATTEMPTS = 2  # 最大尝试次数（包括首次）
 RETRY_DELAY_SECONDS = 3  # 重试前等待秒数
+
+
+def _append_failed_email_record(receiver_email, receiver_name, subject, custom_body, error_message):
+    """将发送失败的邮件内容追加记录到日志文件（条目间空一行）"""
+    try:
+        os.makedirs(os.path.dirname(FAILED_EMAIL_LOG_FILE), exist_ok=True)
+        record = (
+            f"[FAILED_AT] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"[RECEIVER_NAME] {receiver_name}\n"
+            f"[RECEIVER_EMAIL] {receiver_email}\n"
+            f"[SUBJECT] {subject}\n"
+            f"[BODY]\n{custom_body}\n"
+            f"[ERROR] {error_message}\n"
+        )
+
+        with open(FAILED_EMAIL_LOG_FILE, "a", encoding="utf-8") as file:
+            # 文件已有内容时，先空一行再追加新的失败记录
+            if os.path.exists(FAILED_EMAIL_LOG_FILE) and os.path.getsize(FAILED_EMAIL_LOG_FILE) > 0:
+                file.write("\n")
+            file.write(record)
+
+        print(f"[FailureLog] 已记录发送失败邮件到: {FAILED_EMAIL_LOG_FILE}")
+    except Exception as log_error:
+        print(f"[FailureLog] 记录失败邮件时出错: {log_error}")
 
 
 def read_email_credentials():
@@ -73,6 +102,7 @@ def _send_via_provider(
     provider_name,
     smtp_server,
     smtp_port,
+    use_ssl,
     username,
     app_password,
     receiver_email,
@@ -88,8 +118,11 @@ def _send_via_provider(
         try:
             message = _build_message(username, receiver_email, subject, custom_body)
 
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-            server.starttls()
+            if use_ssl:
+                server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+            else:
+                server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+                server.starttls()
             server.login(username, app_password)
             server.send_message(message)
             server.quit()
@@ -138,41 +171,50 @@ def send_email(receiver_email, receiver_name, subject, custom_body):
     Returns:
         bool: 邮件是否发送成功
     """
-    credentials = read_email_credentials()
+    try:
+        credentials = read_email_credentials()
 
-    gmail_ok, gmail_error = _send_via_provider(
-        provider_name="Gmail",
-        smtp_server=GMAIL_SMTP_SERVER,
-        smtp_port=GMAIL_SMTP_PORT,
-        username=credentials["Gmail"]["email"],
-        app_password=credentials["Gmail"]["password"],
-        receiver_email=receiver_email,
-        receiver_name=receiver_name,
-        subject=subject,
-        custom_body=custom_body,
-    )
-    if gmail_ok:
-        return True
+        gmail_ok, gmail_error = _send_via_provider(
+            provider_name="Gmail",
+            smtp_server=GMAIL_SMTP_SERVER,
+            smtp_port=GMAIL_SMTP_PORT,
+            use_ssl=GMAIL_SMTP_USE_SSL,
+            username=credentials["Gmail"]["email"],
+            app_password=credentials["Gmail"]["password"],
+            receiver_email=receiver_email,
+            receiver_name=receiver_name,
+            subject=subject,
+            custom_body=custom_body,
+        )
+        if gmail_ok:
+            return True
 
-    print(f"[Fallback] Gmail发送失败，开始切换QQmail备用通道: {gmail_error}")
+        print(f"[Fallback] Gmail发送失败，开始切换QQmail备用通道: {gmail_error}")
 
-    qq_ok, qq_error = _send_via_provider(
-        provider_name="QQmail",
-        smtp_server=QQMAIL_SMTP_SERVER,
-        smtp_port=QQMAIL_SMTP_PORT,
-        username=credentials["QQmail"]["email"],
-        app_password=credentials["QQmail"]["password"],
-        receiver_email=receiver_email,
-        receiver_name=receiver_name,
-        subject=subject,
-        custom_body=custom_body,
-    )
-    if qq_ok:
-        print("[Fallback] QQmail备用通道发送成功")
-        return True
+        qq_ok, qq_error = _send_via_provider(
+            provider_name="QQmail",
+            smtp_server=QQMAIL_SMTP_SERVER,
+            smtp_port=QQMAIL_SMTP_PORT,
+            use_ssl=QQMAIL_SMTP_USE_SSL,
+            username=credentials["QQmail"]["email"],
+            app_password=credentials["QQmail"]["password"],
+            receiver_email=receiver_email,
+            receiver_name=receiver_name,
+            subject=subject,
+            custom_body=custom_body,
+        )
+        if qq_ok:
+            print("[Fallback] QQmail备用通道发送成功")
+            return True
 
-    print(f"[Fallback] QQmail备用通道也发送失败: {qq_error}")
-    return False
+        final_error = f"GmailError={gmail_error}; QQmailError={qq_error}"
+        print(f"[Fallback] QQmail备用通道也发送失败: {qq_error}")
+        _append_failed_email_record(receiver_email, receiver_name, subject, custom_body, final_error)
+        return False
+    except Exception as e:
+        _append_failed_email_record(receiver_email, receiver_name, subject, custom_body, str(e))
+        print(f"[SendEmail] 发送过程中出现异常，已记录失败信息: {e}")
+        return False
 
 
 def send_reminder_emails(group_members):

@@ -2,7 +2,7 @@
 
 自动化处理GISource学术信息的发布系统，支持Windows、macOS和Linux多平台运行。
 
-**版本**: v2.0.0 | **最后更新**: 2025-11-29
+**版本**: v2.1.0 | **最后更新**: 2026-05-02
 
 ---
 
@@ -95,6 +95,7 @@ pip3 install -r requirements.txt
 4. 生成新密码（选择"邮件"和"Windows计算机"或其他设备）
 5. 复制生成的16位密码（类似：`xxxx xxxx xxxx xxxx`）
 6. QQ 邮箱请在邮箱设置中开启 SMTP，并生成授权码（不是登录密码）
+7. QQmail 推荐使用 `smtp.qq.com:465`（SSL 连接）
 
 **创建凭据文件：**
 
@@ -469,6 +470,7 @@ DOCUMENT_ID = 'your-document-id'
 - `send_reminder_emails()` - 批量提醒
 - `send_error_notification()` - 错误通知
 - `send_wechat_notification()` - 微信消息通知
+- `_append_failed_email_record()` - 邮件最终发送失败时落盘记录到 `logs/failed_email_records.txt`
 
 ### 7. data_processor.py - 数据处理
 **主要函数**:
@@ -580,6 +582,8 @@ def send_slack_notification(message):
 - 确认已启用两步验证
 - 检查 `email_credentials.txt` 是否包含 `[Gmail]` 与 `[QQmail]` 两个段
 - 主通道 Gmail 失败时，系统会自动回退到 QQmail 发送
+- 当前 QQmail 使用 `smtp.qq.com:465`（SSL）
+- 若两条通道都失败，邮件内容会自动追加记录到 `logs/failed_email_records.txt`
 
 #### Q3: 数据库连接失败
 **A:**
@@ -716,7 +720,13 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ## 版本历史
 
-### v2.0.0 (当前版本 - 2025-11-29)
+### v2.1.0 (当前版本 - 2026-05-02)
+- ✨ 新增 Gmail -> QQmail 自动回退发送链路
+- 🔐 QQmail 改为官方推荐 `465 + SSL` 连接模式
+- 📝 新增邮件失败落盘记录（`logs/failed_email_records.txt`，追加写入）
+- 📚 更新邮箱配置文档与故障排除说明
+
+### v2.0.0 (2025-11-29)
 - 🎉 重构为模块化Python项目
 - ✨ 支持跨平台运行（Windows/macOS/Linux）
 - 🔧 改进代码结构和可维护性
@@ -742,6 +752,6 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ---
 
-**最后更新**: 2025-11-29  
+**最后更新**: 2026-05-02  
 **维护者**: GISource团队  
 **项目状态**: 生产就绪 ✅

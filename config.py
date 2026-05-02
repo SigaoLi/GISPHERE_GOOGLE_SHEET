@@ -34,8 +34,10 @@ SQL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'sql_credentials.txt')
 # SMTP 配置（主通道 + QQmail备用通道）
 GMAIL_SMTP_SERVER = "smtp.gmail.com"
 GMAIL_SMTP_PORT = 587
+GMAIL_SMTP_USE_SSL = False
 QQMAIL_SMTP_SERVER = "smtp.qq.com"
-QQMAIL_SMTP_PORT = 587
+QQMAIL_SMTP_PORT = 465
+QQMAIL_SMTP_USE_SSL = True
 
 # 国家字典
 COUNTRY_DICTIONARY = {
@@ -277,3 +279,4 @@ OPENAI_BASE_URL = "https://oneapi.gisphere.info/v1"
 # 日志文件夹路径
 LLM_LOGS_DIR = os.path.join(BASE_DIR, 'llm_logs')
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+FAILED_EMAIL_LOG_FILE = os.path.join(LOGS_DIR, 'failed_email_records.txt')
