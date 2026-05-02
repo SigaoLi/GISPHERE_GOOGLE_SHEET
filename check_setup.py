@@ -7,6 +7,7 @@
 import os
 import sys
 import platform
+import configparser
 
 
 def print_header(text):
@@ -83,6 +84,47 @@ def check_dependencies():
     return all_ok
 
 
+def check_email_credentials_format(filepath='keys/email_credentials.txt'):
+    """检查邮箱凭据文件是否为 Gmail + QQmail 的 INI 格式"""
+    if not os.path.exists(filepath):
+        return False
+
+    parser = configparser.ConfigParser()
+    encodings = ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']
+    read_ok = False
+
+    for encoding in encodings:
+        try:
+            with open(filepath, 'r', encoding=encoding) as file:
+                parser.read_file(file)
+            read_ok = True
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+        except Exception as e:
+            print_check("邮箱凭据格式", False, f"读取失败: {e}")
+            return False
+
+    if not read_ok:
+        print_check("邮箱凭据格式", False, "无法识别文件编码（支持 UTF-8/GBK/GB2312）")
+        return False
+
+    required_sections = ["Gmail", "QQmail"]
+    required_keys = ["email", "password"]
+
+    for section in required_sections:
+        if not parser.has_section(section):
+            print_check("邮箱凭据格式", False, f"缺少 [{section}] 段")
+            return False
+        for key in required_keys:
+            if not parser.has_option(section, key) or not parser.get(section, key).strip():
+                print_check("邮箱凭据格式", False, f"[{section}] 缺少 {key} 字段或为空")
+                return False
+
+    print_check("邮箱凭据格式", True, "已检测到 [Gmail] 与 [QQmail] 段")
+    return True
+
+
 def main():
     """主函数"""
     print_header("GISource 环境检查")
@@ -125,6 +167,9 @@ def main():
     config_ok = []
     for filename, description in config_files:
         config_ok.append(check_file_exists(filename, description))
+
+    if config_ok[1]:
+        config_ok.append(check_email_credentials_format('keys/email_credentials.txt'))
     
     # 依赖包检查
     deps_ok = check_dependencies()
@@ -158,7 +203,7 @@ def main():
         print("\n2. 配置邮箱:")
         print("   - 复制 keys/email_credentials.txt.example")
         print("   - 重命名为 keys/email_credentials.txt")
-        print("   - 填写邮箱和应用专用密码")
+        print("   - 填写 [Gmail] 和 [QQmail] 两个段的邮箱及应用专用密码/授权码")
         print("\n3. 配置数据库:")
         print("   - 复制 keys/sql_credentials.txt.example")
         print("   - 重命名为 keys/sql_credentials.txt")

@@ -25,4 +25,5 @@ pypinyin>=0.44.0
 # 1. 运行前请确保安装了所有依赖: pip install -r requirements.txt
 # 2. Python版本要求: 3.7 或更高
 # 3. 跨平台支持: Windows, macOS, Linux
+# 4. Gmail/QQmail 主备发送使用标准库 smtplib + configparser，无额外三方依赖
 

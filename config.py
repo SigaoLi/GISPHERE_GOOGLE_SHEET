@@ -31,9 +31,11 @@ EMAIL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'email_credentials.txt')
 GROUP_MEMBERS_FILE = os.path.join(KEYS_DIR, 'group_members.txt')
 SQL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'sql_credentials.txt')
 
-# SMTP配置
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+# SMTP 配置（主通道 + QQmail备用通道）
+GMAIL_SMTP_SERVER = "smtp.gmail.com"
+GMAIL_SMTP_PORT = 587
+QQMAIL_SMTP_SERVER = "smtp.qq.com"
+QQMAIL_SMTP_PORT = 587
 
 # 国家字典
 COUNTRY_DICTIONARY = {

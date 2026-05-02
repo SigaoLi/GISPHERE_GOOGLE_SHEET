@@ -1,11 +1,18 @@
 """
 邮件发送模块 - 处理SMTP邮件发送
 """
+import configparser
 import smtplib
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from config import EMAIL_CREDENTIALS_FILE, SMTP_SERVER, SMTP_PORT
+from config import (
+    EMAIL_CREDENTIALS_FILE,
+    GMAIL_SMTP_SERVER,
+    GMAIL_SMTP_PORT,
+    QQMAIL_SMTP_SERVER,
+    QQMAIL_SMTP_PORT,
+)
 
 # 重试配置
 MAX_RETRY_ATTEMPTS = 2  # 最大尝试次数（包括首次）
@@ -13,29 +20,116 @@ RETRY_DELAY_SECONDS = 3  # 重试前等待秒数
 
 
 def read_email_credentials():
-    """从文件读取邮箱凭据"""
+    """从文件读取 Gmail 和 QQmail 凭据（INI格式）"""
     # 尝试多种编码方式
     encodings = ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']
-    
+
     for encoding in encodings:
         try:
+            parser = configparser.ConfigParser()
             with open(EMAIL_CREDENTIALS_FILE, "r", encoding=encoding) as file:
-                username = file.readline().strip()
-                app_password = file.readline().strip()
-            return username, app_password
+                parser.read_file(file)
+
+            required_sections = ["Gmail", "QQmail"]
+            for section in required_sections:
+                if not parser.has_section(section):
+                    raise ValueError(f"邮箱凭据缺少 [{section}] 段")
+                if not parser.has_option(section, "email") or not parser.has_option(section, "password"):
+                    raise ValueError(f"[{section}] 段缺少 email 或 password 字段")
+
+            return {
+                "Gmail": {
+                    "email": parser.get("Gmail", "email").strip(),
+                    "password": parser.get("Gmail", "password").strip(),
+                },
+                "QQmail": {
+                    "email": parser.get("QQmail", "email").strip(),
+                    "password": parser.get("QQmail", "password").strip(),
+                }
+            }
         except (UnicodeDecodeError, UnicodeError):
             continue
-    
-    # 如果所有编码都失败，抛出错误
+        except configparser.Error as e:
+            raise ValueError(f"邮箱凭据格式错误: {e}") from e
+
+    # 如果所有编码读取都失败，抛出错误
     raise UnicodeDecodeError(
         'utf-8', b'', 0, 1,
         f'无法读取文件 {EMAIL_CREDENTIALS_FILE}，请确保文件使用 UTF-8, GBK 或 GB2312 编码'
     )
 
 
+def _build_message(sender_email, receiver_email, subject, custom_body):
+    """构建邮件消息对象"""
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+    message.attach(MIMEText(custom_body, "plain", "utf-8"))
+    return message
+
+
+def _send_via_provider(
+    provider_name,
+    smtp_server,
+    smtp_port,
+    username,
+    app_password,
+    receiver_email,
+    receiver_name,
+    subject,
+    custom_body
+):
+    """通过指定 SMTP 通道发送邮件（带重试）"""
+    last_error = None
+
+    for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+        server = None
+        try:
+            message = _build_message(username, receiver_email, subject, custom_body)
+
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.starttls()
+            server.login(username, app_password)
+            server.send_message(message)
+            server.quit()
+
+            if attempt > 1:
+                print(
+                    f"[{provider_name}] Email sent successfully to {receiver_name} "
+                    f"({receiver_email}) [重试第{attempt - 1}次成功]"
+                )
+            else:
+                print(f"[{provider_name}] Email sent successfully to {receiver_name} ({receiver_email})")
+            return True, None
+
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_RETRY_ATTEMPTS:
+                print(
+                    f"[{provider_name}] Failed to send email to {receiver_name} "
+                    f"(attempt {attempt}/{MAX_RETRY_ATTEMPTS}): {e}"
+                )
+                print(f"[{provider_name}] Retrying in {RETRY_DELAY_SECONDS} seconds...")
+                time.sleep(RETRY_DELAY_SECONDS)
+            else:
+                print(
+                    f"[{provider_name}] Failed to send email to {receiver_name} after "
+                    f"{MAX_RETRY_ATTEMPTS} attempts: {last_error}"
+                )
+        finally:
+            if server is not None:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
+
+    return False, last_error
+
+
 def send_email(receiver_email, receiver_name, subject, custom_body):
     """
-    发送邮件（带自动重试）
+    发送邮件（Gmail 主通道失败后自动切换 QQmail）
     Args:
         receiver_email: 收件人邮箱
         receiver_name: 收件人姓名
@@ -44,42 +138,40 @@ def send_email(receiver_email, receiver_name, subject, custom_body):
     Returns:
         bool: 邮件是否发送成功
     """
-    last_error = None
-    
-    for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
-        try:
-            # 读取SMTP凭据
-            username, app_password = read_email_credentials()
-            
-            # 创建邮件
-            message = MIMEMultipart()
-            message["From"] = username
-            message["To"] = receiver_email
-            message["Subject"] = subject
-            message.attach(MIMEText(custom_body, "plain", "utf-8"))
-            
-            # 发送邮件
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30)
-            server.starttls()
-            server.login(username, app_password)
-            server.send_message(message)
-            server.quit()
-            
-            if attempt > 1:
-                print(f"Email sent successfully to {receiver_name} ({receiver_email}) [重试第{attempt-1}次成功]")
-            else:
-                print(f"Email sent successfully to {receiver_name} ({receiver_email})")
-            return True
-        
-        except Exception as e:
-            last_error = e
-            if attempt < MAX_RETRY_ATTEMPTS:
-                print(f"Failed to send email to {receiver_name} (attempt {attempt}/{MAX_RETRY_ATTEMPTS}): {e}")
-                print(f"Retrying in {RETRY_DELAY_SECONDS} seconds...")
-                time.sleep(RETRY_DELAY_SECONDS)
-            else:
-                print(f"Failed to send email to {receiver_name} after {MAX_RETRY_ATTEMPTS} attempts: {last_error}")
-    
+    credentials = read_email_credentials()
+
+    gmail_ok, gmail_error = _send_via_provider(
+        provider_name="Gmail",
+        smtp_server=GMAIL_SMTP_SERVER,
+        smtp_port=GMAIL_SMTP_PORT,
+        username=credentials["Gmail"]["email"],
+        app_password=credentials["Gmail"]["password"],
+        receiver_email=receiver_email,
+        receiver_name=receiver_name,
+        subject=subject,
+        custom_body=custom_body,
+    )
+    if gmail_ok:
+        return True
+
+    print(f"[Fallback] Gmail发送失败，开始切换QQmail备用通道: {gmail_error}")
+
+    qq_ok, qq_error = _send_via_provider(
+        provider_name="QQmail",
+        smtp_server=QQMAIL_SMTP_SERVER,
+        smtp_port=QQMAIL_SMTP_PORT,
+        username=credentials["QQmail"]["email"],
+        app_password=credentials["QQmail"]["password"],
+        receiver_email=receiver_email,
+        receiver_name=receiver_name,
+        subject=subject,
+        custom_body=custom_body,
+    )
+    if qq_ok:
+        print("[Fallback] QQmail备用通道发送成功")
+        return True
+
+    print(f"[Fallback] QQmail备用通道也发送失败: {qq_error}")
     return False
 
 

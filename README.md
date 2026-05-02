@@ -42,7 +42,7 @@
 - 稳定的网络连接
 - Google API 访问权限（Google Sheets + Google Docs）
 - MySQL 数据库访问权限
-- Gmail 邮箱（用于发送通知）
+- Gmail 和 QQmail 邮箱（用于主备发送通知）
 
 ---
 
@@ -53,7 +53,8 @@
 在开始之前，请确保您有：
 - [ ] Python 3.7+ 已安装
 - [ ] Google账号（用于访问Google Sheets和Docs）
-- [ ] Gmail邮箱（用于发送通知邮件）
+- [ ] Gmail邮箱（主发送通道）
+- [ ] QQmail邮箱（备用发送通道）
 - [ ] MySQL数据库访问权限
 - [ ] 网络连接正常
 
@@ -87,12 +88,13 @@ pip3 install -r requirements.txt
 
 #### 步骤 3: 配置邮箱（1分钟）
 
-**获取Gmail应用专用密码：**
+**获取 Gmail / QQmail 发信凭据：**
 1. 访问：https://myaccount.google.com/security
 2. 启用"两步验证"
 3. 在"两步验证"页面，找到"应用专用密码"
 4. 生成新密码（选择"邮件"和"Windows计算机"或其他设备）
 5. 复制生成的16位密码（类似：`xxxx xxxx xxxx xxxx`）
+6. QQ 邮箱请在邮箱设置中开启 SMTP，并生成授权码（不是登录密码）
 
 **创建凭据文件：**
 
@@ -110,10 +112,15 @@ cp keys/email_credentials.txt.example keys/email_credentials.txt
 nano keys/email_credentials.txt
 ```
 
-编辑内容为：
+编辑内容为（INI 分段格式，区分 `Gmail` 与 `QQmail`）：
 ```
-your-email@gmail.com
-xxxx xxxx xxxx xxxx
+[Gmail]
+email = your-gmail@gmail.com
+password = xxxx xxxx xxxx xxxx
+
+[QQmail]
+email = your-qq@qq.com
+password = your-qq-auth-code
 ```
 
 #### 步骤 4: 配置数据库（1分钟）
@@ -246,9 +253,14 @@ pip install -r requirements.txt
 从 Google Cloud Console 下载
 
 #### email_credentials.txt
-```
-your-email@gmail.com
-your-app-password
+```ini
+[Gmail]
+email = your-gmail@gmail.com
+password = your-gmail-app-password
+
+[QQmail]
+email = your-qq@qq.com
+password = your-qq-auth-code
 ```
 
 #### group_members.txt
@@ -566,7 +578,8 @@ def send_slack_notification(message):
 **A:** 
 - 检查是否使用了"应用专用密码"而非普通密码
 - 确认已启用两步验证
-- 检查 `email_credentials.txt` 格式是否正确（两行，无多余空格）
+- 检查 `email_credentials.txt` 是否包含 `[Gmail]` 与 `[QQmail]` 两个段
+- 主通道 Gmail 失败时，系统会自动回退到 QQmail 发送
 
 #### Q3: 数据库连接失败
 **A:**
