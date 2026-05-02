@@ -1,7 +1,9 @@
 # GISource 项目 .gitignore
 
 # 凭据文件 - 敏感信息，不要提交到版本控制
-keys/
+keys/*
+!keys/email_credentials.txt.example
+!keys/sql_credentials.txt.example
 
 # Python 缓存
 __pycache__/
