@@ -6,7 +6,7 @@ import os
 import time
 import mysql.connector
 from mysql.connector import Error
-from config import SQL_CREDENTIALS_FILE
+from ..core.config import SQL_CREDENTIALS_FILE
 
 
 def get_database_connection(timeout=15):

@@ -27,7 +27,8 @@ UNFILLED_SHEET_ID = 0
 CHINA_TZ = pytz.timezone('Asia/Shanghai')
 
 # 文件路径配置（跨平台兼容）
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 项目根目录（本文件位于 src/core/ 下，keys/logs 等数据目录在根目录）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KEYS_DIR = os.path.join(BASE_DIR, 'keys')
 CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'credentials.json')
 TOKEN_PICKLE_FILE = os.path.join(KEYS_DIR, 'token.pickle')

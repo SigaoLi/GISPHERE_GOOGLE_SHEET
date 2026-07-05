@@ -6,8 +6,8 @@ import pickle
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.exceptions import RefreshError
-from google_http import build_google_service, setup_google_proxy_env, refresh_credentials, execute_with_retry
-from config import (
+from .google_http import build_google_service, setup_google_proxy_env, refresh_credentials, execute_with_retry
+from ..core.config import (
     SCOPES_SHEETS,
     SPREADSHEET_ID,
     TOKEN_PICKLE_FILE,

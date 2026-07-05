@@ -68,8 +68,9 @@ def check_dependencies():
         'googleapiclient': 'google-api-python-client',
         'mysql.connector': 'mysql-connector-python',
         'pytz': 'pytz',
-        'pycountry': 'pycountry',
-        'inflect': 'inflect'
+        'inflect': 'inflect',
+        'pypinyin': 'pypinyin',
+        'socks': 'PySocks'
     }
     
     all_ok = True
@@ -141,14 +142,18 @@ def main():
     print("\n核心文件检查:")
     # 核心模块
     core_files = [
-        ('main.py', '主程序'),
-        ('config.py', '配置模块'),
-        ('utils.py', '工具模块'),
-        ('google_sheets.py', 'Google Sheets模块'),
-        ('google_docs.py', 'Google Docs模块'),
-        ('database.py', '数据库模块'),
-        ('email_sender.py', '邮件模块'),
-        ('data_processor.py', '数据处理模块'),
+        ('run.py', '启动入口'),
+        ('src/main.py', '主流程'),
+        ('src/core/config.py', '配置模块'),
+        ('src/core/utils.py', '工具模块'),
+        ('src/core/logger.py', '日志模块'),
+        ('src/core/data_processor.py', '数据处理模块'),
+        ('src/integrations/google_http.py', 'Google 网络层'),
+        ('src/integrations/google_sheets.py', 'Google Sheets模块'),
+        ('src/integrations/google_docs.py', 'Google Docs模块'),
+        ('src/integrations/database.py', '数据库模块'),
+        ('src/integrations/email_sender.py', '邮件模块'),
+        ('src/integrations/smtp_proxy.py', '代理SMTP模块'),
         ('requirements.txt', '依赖清单')
     ]
     
@@ -215,11 +220,6 @@ def main():
     print("🎉 所有检查通过！系统已准备就绪。".center(60))
     print("=" * 60)
     print("\n可以运行以下命令启动系统：")
-    if platform.system() == "Windows":
-        print("   python main.py")
-    else:
-        print("   python3 main.py")
-    print("\n或使用快速启动脚本：")
     if platform.system() == "Windows":
         print("   python run.py")
     else:

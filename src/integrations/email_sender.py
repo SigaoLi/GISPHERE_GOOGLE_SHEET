@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from config import (
+from ..core.config import (
     EMAIL_CREDENTIALS_FILE,
     FAILED_EMAIL_LOG_FILE,
     GOOGLE_API_PROXY,
@@ -21,7 +21,7 @@ from config import (
     QQMAIL_SMTP_PORT,
     QQMAIL_SMTP_USE_SSL,
 )
-from smtp_proxy import create_smtp_client
+from .smtp_proxy import create_smtp_client
 
 _gmail_api_notice_printed = False
 
@@ -107,8 +107,8 @@ def _build_message(sender_email, receiver_email, subject, custom_body):
 def _send_gmail_via_api(sender_email, receiver_email, receiver_name, subject, custom_body):
     """经 Gmail API 发送（走与 Google Sheets 相同的代理）"""
     global _gmail_api_notice_printed
-    from google_sheets import authorize_credentials
-    from google_http import build_google_service, setup_google_proxy_env
+    from .google_sheets import authorize_credentials
+    from .google_http import build_google_service, setup_google_proxy_env
 
     setup_google_proxy_env()
     if not _gmail_api_notice_printed:

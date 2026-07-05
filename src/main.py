@@ -24,14 +24,14 @@ import numpy as np
 from datetime import datetime
 
 # 本地模块导入
-from config import (
+from .core.config import (
     CHINA_TZ, 
     UNFILLED_SHEET_ID,
     GROUP_MEMBERS_FILE,
     KEYS_DIR,
     REQUIRED_COLUMNS
 )
-from utils import (
+from .core.utils import (
     read_group_members, 
     adjust_data_to_columns,
     is_date,
@@ -39,14 +39,14 @@ from utils import (
     column_index_to_letter,
     format_period_title
 )
-from google_sheets import (
+from .integrations.google_sheets import (
     fetch_data,
     delete_rows_from_sheet,
     append_data_to_sheet,
     update_data_in_sheet,
     batch_update_data_in_sheet
 )
-from database import (
+from .integrations.database import (
     get_database_connection,
     clean_university_names,
     get_gisource_data,
@@ -54,20 +54,20 @@ from database import (
     get_max_event_id,
     insert_event_to_database
 )
-from email_sender import (
+from .integrations.email_sender import (
     send_reminder_emails,
     send_error_notification,
     send_wechat_notification
 )
-from data_processor import (
+from .core.data_processor import (
     check_required_fields,
     create_sql_table,
     generate_abbreviation,
     generate_wechat_group_text,
     convert_to_wechat_format
 )
-from google_docs import add_wechat_content_to_doc, add_wechat_content_to_doc_sorted, ensure_current_period_exists
-from logger import (
+from .integrations.google_docs import add_wechat_content_to_doc, add_wechat_content_to_doc_sorted, ensure_current_period_exists
+from .core.logger import (
     log_program_run,
     log_program_start,
     log_program_end,

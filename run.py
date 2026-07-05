@@ -21,6 +21,6 @@ if current_dir not in sys.path:
 
 # 导入并运行主程序
 if __name__ == "__main__":
-    from main import main
+    from src.main import main
     main()
 

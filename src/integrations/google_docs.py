@@ -8,18 +8,18 @@ from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from google_http import build_google_service, setup_google_proxy_env, refresh_credentials
-from config import (
+from .google_http import build_google_service, setup_google_proxy_env, refresh_credentials
+from ..core.config import (
     SCOPES_DOCS, DOCUMENT_ID, TOKEN_JSON_FILE, CREDENTIALS_FILE, BASE_DIR,
     LLM_KEY_FILE, OPENAI_BASE_URL, OPENAI_MODEL, LLM_MODEL_CHAIN,
 )
-from data_processor import (
+from ..core.data_processor import (
     get_job_category, 
     get_time_category, 
     get_sort_priority,
     parse_deadline_for_sort
 )
-from utils import get_pinyin_sort_key
+from ..core.utils import get_pinyin_sort_key
 
 # 周期标题的正则表达式模式
 # 匹配新格式: "海外资讯 136 | 2026.02.08 - 2026.02.21"
@@ -129,7 +129,7 @@ def call_llm_for_content_organization(existing_content, new_content, date_subtit
     """
     try:
         import openai
-        from logger import log_llm_conversation
+        from ..core.logger import log_llm_conversation
         
         api_key = get_llm_key()
         if not api_key:

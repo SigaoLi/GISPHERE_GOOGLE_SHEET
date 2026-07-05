@@ -3,14 +3,14 @@
 """
 import pandas as pd
 from datetime import date
-from config import (
+from .config import (
     COUNTRY_DICTIONARY, 
     JOB_DICTIONARY, 
     SUBJECT_DICTIONARY,
     LABEL_COLUMNS,
     REQUIRED_COLUMNS
 )
-from utils import (
+from .utils import (
     number_to_english_words,
     number_to_chinese_words,
     safe_convert_to_int,

@@ -15,7 +15,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google_auth_httplib2 import AuthorizedHttp
 
-from config import GOOGLE_API_PROXY
+from ..core.config import GOOGLE_API_PROXY
 
 _proxy_notice_printed = False
 

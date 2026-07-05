@@ -5,7 +5,7 @@ import warnings
 import pandas as pd
 import inflect
 from datetime import datetime, date, timedelta
-from config import CHINA_TZ
+from .config import CHINA_TZ
 from pypinyin import lazy_pinyin
 
 # 初始化inflect引擎

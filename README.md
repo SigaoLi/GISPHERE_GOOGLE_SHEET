@@ -159,17 +159,12 @@ database = your-database-name
 
 **Windows:**
 ```bash
-python main.py
+python run.py
 ```
 
 **macOS/Linux:**
 ```bash
-python3 main.py
-```
-
-或使用快速启动脚本：
-```bash
-python run.py
+python3 run.py
 ```
 
 ### 首次运行说明
@@ -197,22 +192,25 @@ python run.py
 ```
 Google_Sheet/
 │
-├── 🚀 启动文件
-│   ├── main.py                    # 主程序入口
-│   ├── run.py                     # 快速启动脚本（推荐）
-│   └── check_setup.py             # 环境检查工具
+├── 🚀 启动入口
+│   └── run.py                     # 唯一启动方式：python run.py
 │
-├── ⚙️ 核心模块
-│   ├── config.py                  # 配置管理（常量、字典、代理探测、LLM 模型链）
-│   ├── utils.py                   # 工具函数
-│   ├── logger.py                  # 日志记录及终端输出捕获
-│   ├── data_processor.py          # 数据处理和格式转换
-│   ├── google_http.py             # Google API 代理/HTTP 客户端 + 请求重试
-│   ├── google_sheets.py           # Google Sheets API（JSON 令牌 + 重试）
-│   ├── google_docs.py             # Google Docs API + LLM 内容组织（模型链）
-│   ├── database.py                # MySQL数据库操作（重试 + 代理隔离）
-│   ├── email_sender.py            # 邮件发送（Gmail API 优先 / 代理 SMTP / QQmail 回退）
-│   └── smtp_proxy.py              # 经本地代理连接 Gmail SMTP（备用通道）
+├── 📦 源码包 src/
+│   ├── main.py                    # 主流程编排
+│   ├── core/                      # 核心模块
+│   │   ├── config.py              # 配置管理（常量、字典、代理探测、LLM 模型链）
+│   │   ├── utils.py               # 工具函数
+│   │   ├── logger.py              # 日志记录及终端输出捕获
+│   │   └── data_processor.py      # 数据处理和格式转换
+│   ├── integrations/              # 外部集成
+│   │   ├── google_http.py         # Google API 代理/HTTP 客户端 + 请求重试
+│   │   ├── google_sheets.py       # Google Sheets API（JSON 令牌 + 重试 + 进程内缓存）
+│   │   ├── google_docs.py         # Google Docs API + LLM 内容组织（模型链）
+│   │   ├── database.py            # MySQL数据库操作（重试 + 代理隔离）
+│   │   ├── email_sender.py        # 邮件发送（Gmail API 优先 / 代理 SMTP / QQmail 回退）
+│   │   └── smtp_proxy.py          # 经本地代理连接 Gmail SMTP（备用通道）
+│   └── tools/
+│       └── check_setup.py         # 环境检查：python -m src.tools.check_setup
 │
 ├── 📋 配置文件（需手动创建）
 │   └── keys/                   # 密钥文件夹
@@ -295,9 +293,9 @@ database = database_name
 
 ### 4. 验证安装
 
-运行环境检查工具：
+运行环境检查工具（在仓库根目录执行）：
 ```bash
-python check_setup.py
+python -m src.tools.check_setup
 ```
 
 这会检查：
@@ -313,14 +311,11 @@ python check_setup.py
 ### 基本运行
 
 ```bash
-# 方式1：直接运行
-python main.py
-
-# 方式2：使用启动脚本（推荐）
+# 启动（唯一入口）
 python run.py
 
-# 方式3：检查环境后运行
-python check_setup.py && python main.py
+# 检查环境后运行
+python -m src.tools.check_setup && python run.py
 ```
 
 ### 运行输出示例
@@ -695,8 +690,8 @@ pip install -r requirements.txt
 
 1. **查看详细输出**: 程序会打印每个步骤的状态
 2. **检查日志**: 邮件发送、数据库操作都有日志
-3. **逐步调试**: 可以在main.py中注释掉某些步骤
-4. **使用check_setup.py**: 快速检查环境配置
+3. **逐步调试**: 可以在src/main.py中注释掉某些步骤
+4. **使用环境检查**: `python -m src.tools.check_setup` 快速检查环境配置
 
 ---
 
@@ -749,7 +744,7 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 | 方面 | Jupyter Notebook | Python模块化 |
 |------|-----------------|-------------|
-| 运行方式 | 单元格逐个运行 | 一键运行 `python main.py` |
+| 运行方式 | 单元格逐个运行 | 一键运行 `python run.py` |
 | 维护性 | 代码混在一起 | 模块清晰，易维护 |
 | 复用性 | 难以复用 | 函数可独立复用 |
 | 自动化 | 手动运行 | 完全自动化 |
@@ -792,7 +787,7 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 或查看：
 1. 本 README 文档
-2. 运行 `python check_setup.py` 检查环境
+2. 运行 `python -m src.tools.check_setup` 检查环境
 3. 查看终端输出的错误信息
 
 ---

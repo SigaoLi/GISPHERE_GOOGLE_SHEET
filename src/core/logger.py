@@ -6,11 +6,7 @@ import os
 import sys
 import json
 from datetime import datetime
-from config import BASE_DIR, CHINA_TZ
-
-# 日志文件夹路径
-LLM_LOGS_DIR = os.path.join(BASE_DIR, 'llm_logs')
-LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+from .config import CHINA_TZ, LLM_LOGS_DIR, LOGS_DIR
 
 # 确保日志文件夹存在
 os.makedirs(LLM_LOGS_DIR, exist_ok=True)

@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import socks
 
-from config import GOOGLE_API_PROXY
+from ..core.config import GOOGLE_API_PROXY
 
 _gmail_proxy_notice_printed = False
 
