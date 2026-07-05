@@ -22,16 +22,12 @@ from utils import (
 def create_job_title(row):
     """创建英文职位标题"""
     job_titles = []
-    non_student_titles = {'PostDoc', 'Research Assistant', 'Competition', 'Summer School', 'Conference', 'Workshop'}
-    
-    for column in ['Master Student', 'Doctoral Student', 'PostDoc', 'Research Assistant', 
+
+    for column in ['Master Student', 'Doctoral Student', 'PostDoc', 'Research Assistant',
                    'Competition', 'Summer School', 'Conference', 'Workshop']:
         if row[column] in [1, '1', 1.0]:
-            if column not in non_student_titles:
-                job_titles.append(column.replace(" Student", " Student"))
-            else:
-                job_titles.append(column)
-    
+            job_titles.append(column)
+
     return ' or '.join(job_titles)
 
 
@@ -137,7 +133,7 @@ def create_sql_table(selected_row, new_event_id):
                     formatted_deadline = deadline_dt.strftime('%Y-%m-%d')
                 else:
                     formatted_deadline = str(deadline_value)
-        except:
+        except Exception:
             formatted_deadline = str(deadline_value)
     else:
         formatted_deadline = str(deadline_value)
@@ -475,6 +471,6 @@ def parse_deadline_for_sort(deadline_str):
         
         # 尝试标准日期格式
         return pd.to_datetime(deadline_str).date()
-    except:
+    except Exception:
         return date(9999, 12, 31)
 

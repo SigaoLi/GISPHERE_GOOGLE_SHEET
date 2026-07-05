@@ -1,29 +1,32 @@
 # GISource 自动化系统依赖包
-# 适用于 Python 3.7+
+# 适用于 Python 3.8+
+#
+# 多人协作注意：关键依赖设有版本上界，防止各自环境装到不兼容的大版本
+# （如 pandas 3.0 移除 applymap 等 API）。升级大版本前请全流程测试后统一调整。
 
 # 数据处理
-pandas>=1.3.0
-numpy>=1.21.0
+pandas>=1.5.0,<3.0
+numpy>=1.21.0,<3.0
 
 # Google API
-google-api-python-client>=2.0.0
+google-api-python-client>=2.0.0,<3.0
 google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=0.5.0
-google-auth>=2.0.0
+google-auth>=2.0.0,<3.0
 
 # 数据库
 mysql-connector-python>=8.0.0
 
 # 工具库
 pytz>=2021.1
-pycountry>=20.7.3
 inflect>=5.3.0
-configparser>=5.0.0
 pypinyin>=0.44.0
+
+# Gmail 代理发送
+PySocks>=1.7.0
 
 # 注意事项:
 # 1. 运行前请确保安装了所有依赖: pip install -r requirements.txt
-# 2. Python版本要求: 3.7 或更高
-# 3. 跨平台支持: Windows, macOS, Linux
-# 4. Gmail/QQmail 主备发送使用标准库 smtplib + configparser，无额外三方依赖
-
+# 2. 跨平台支持: Windows, macOS, Linux
+# 3. 已移除 pycountry（国家中文名用 config.COUNTRY_DICTIONARY，pycountry 无中文数据、从未被引用）
+# 4. 已移除 configparser（Python 2 时代的 backport 包，Python 3 标准库自带）

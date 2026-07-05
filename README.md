@@ -2,7 +2,7 @@
 
 自动化处理GISource学术信息的发布系统，支持Windows、macOS和Linux多平台运行。
 
-**版本**: v2.1.0 | **最后更新**: 2026-05-02
+**版本**: v2.2.1 | **最后更新**: 2026-06-28
 
 ---
 
@@ -30,19 +30,25 @@
 - 💾 **数据库同步** - 自动同步数据到MySQL数据库
 - 📧 **邮件通知** - 自动发送邮件通知相关人员
 - 📱 **微信集成** - 自动生成微信群消息和公众号内容
+- 🌐 **国内网络友好** - 自动探测本地代理（Clash/V2Ray 等）并经代理访问 Google；探测后会验证可用性，避免误判
+- ✉️ **Gmail 智能发送** - 检测到代理时优先经 Gmail API 发送（与 Sheets 同一代理通路），失败再回退代理 SMTP / QQmail
+- 🤖 **LLM 模型回退链** - 内容组织优先 Claude，其次 GPT，最后 Gemini，任一不可用自动切换
+- 🔁 **网络重试** - Google API 请求对瞬时错误（超时/连接重置/SSL 中断/429/5xx）自动重试
 - 🌍 **跨平台支持** - 完全支持Windows/macOS/Linux
 - 🔄 **模块化设计** - 易于维护和扩展
-- 🔐 **安全管理** - 凭据文件独立管理，不纳入版本控制
+- 🔐 **安全管理** - 凭据文件独立管理，不纳入版本控制；OAuth 令牌改用可移植 JSON（跨 google-auth 版本均可加载）
 
 ---
 
 ## 系统要求
 
-- Python 3.7 或更高版本
-- 稳定的网络连接
-- Google API 访问权限（Google Sheets + Google Docs）
+- Python 3.7 或更高版本（推荐 3.10+）
+- 稳定的网络连接；**国内环境需本地代理**（Clash/V2Ray 等）以访问 Google，程序会自动探测常见端口（7897/7890/1087/1080/10809/33210）或读取 `HTTPS_PROXY`/`GOOGLE_API_PROXY` 环境变量；显式设置 `GOOGLE_API_PROXY` 会**跳过端口探测**（启动更快，也适用于非常规代理配置；海外直连环境无需任何设置）
+- Google API 访问权限（Google Sheets + Google Docs + Gmail 发送）
 - MySQL 数据库访问权限
 - Gmail 和 QQmail 邮箱（用于主备发送通知）
+- LLM 网关密钥（`keys/llm_key.txt`，用于 `newapi.gisphere.info` 网关，供内容组织调用 Claude/GPT/Gemini）
+- `PySocks`（经代理发送 Gmail SMTP 时需要；已在 `requirements.txt` 中）
 
 ---
 
@@ -81,6 +87,7 @@ pip3 install -r requirements.txt
 3. 启用以下API：
    - Google Sheets API
    - Google Docs API
+   - Gmail API（用于经代理通过 Gmail API 发信）
 4. 创建OAuth 2.0凭据（类型：桌面应用）
 5. 下载JSON文件，重命名为 `credentials.json`
 6. 创建 `keys` 文件夹（如果不存在）
@@ -175,11 +182,13 @@ python run.py
 4. 授权成功后，浏览器会显示"The authentication flow has completed."
 5. **返回终端**，程序将自动继续运行
 
-授权完成后会生成两个文件：
-- `token.pickle`
-- `token.json`
+授权完成后会生成可移植的 JSON 令牌：
+- `keys/token_sheets.json` - Sheets + Gmail 发送令牌（首选；JSON 格式，跨 google-auth 版本均可加载）
+- `keys/token.json` - Google Docs 令牌
 
-以后运行将自动使用这些凭据，无需重新授权。
+> 旧版 `keys/token.pickle` 仍兼容读取，但 pickle 跨库版本可能无法加载；新版统一以 JSON 持久化，加载失败会自动重新授权而非崩溃。
+
+以后运行将自动使用这些凭据，无需重新授权。首次运行需授予 `spreadsheets` 与 `gmail.send` 权限。
 
 ---
 
@@ -194,25 +203,29 @@ Google_Sheet/
 │   └── check_setup.py             # 环境检查工具
 │
 ├── ⚙️ 核心模块
-│   ├── config.py                  # 配置管理（常量、字典）
+│   ├── config.py                  # 配置管理（常量、字典、代理探测、LLM 模型链）
 │   ├── utils.py                   # 工具函数
 │   ├── logger.py                  # 日志记录及终端输出捕获
 │   ├── data_processor.py          # 数据处理和格式转换
-│   ├── google_sheets.py           # Google Sheets API
-│   ├── google_docs.py             # Google Docs API
-│   ├── database.py                # MySQL数据库操作
-│   └── email_sender.py            # 邮件发送功能
+│   ├── google_http.py             # Google API 代理/HTTP 客户端 + 请求重试
+│   ├── google_sheets.py           # Google Sheets API（JSON 令牌 + 重试）
+│   ├── google_docs.py             # Google Docs API + LLM 内容组织（模型链）
+│   ├── database.py                # MySQL数据库操作（重试 + 代理隔离）
+│   ├── email_sender.py            # 邮件发送（Gmail API 优先 / 代理 SMTP / QQmail 回退）
+│   └── smtp_proxy.py              # 经本地代理连接 Gmail SMTP（备用通道）
 │
 ├── 📋 配置文件（需手动创建）
 │   └── keys/                   # 密钥文件夹
 │       ├── credentials.json        # Google API凭据
 │       ├── email_credentials.txt   # 邮箱凭据
 │       ├── group_members.txt       # 组员信息
+│       ├── llm_key.txt             # LLM 网关密钥（Claude/GPT/Gemini）
 │       └── sql_credentials.txt     # 数据库凭据
 │
 ├── 🔐 认证文件（自动生成）
-│   ├── keys/token.pickle           # Google API令牌
-│   └── keys/token.json             # Google API令牌
+│   ├── keys/token_sheets.json      # Sheets + Gmail 令牌（JSON，可移植）
+│   ├── keys/token.json             # Google Docs 令牌
+│   └── keys/token.pickle           # 旧版令牌（兼容读取）
 │
 └── 📚 其他
     ├── logs/                      # 运行日志归档目录（自动生成）
@@ -359,13 +372,13 @@ python check_setup.py && python main.py
 
 ### 如果授权失效
 
-删除以下文件后重新运行：
+删除以下文件后重新运行（程序会重新打开浏览器授权）：
 ```bash
 # Windows
-del token.pickle token.json
+del keys\token_sheets.json keys\token.json keys\token.pickle
 
 # macOS/Linux
-rm token.pickle token.json
+rm keys/token_sheets.json keys/token.json keys/token.pickle
 ```
 
 ---
@@ -422,6 +435,37 @@ SPREADSHEET_ID = 'your-spreadsheet-id'
 DOCUMENT_ID = 'your-document-id'
 ```
 
+### 配置网络代理（访问 Google）
+
+`config.py` 的 `_detect_local_proxy()` 会按顺序处理：
+
+1. 优先读取环境变量 `GOOGLE_API_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY`（显式配置，直接采用）；
+2. 否则探测常见本地代理端口，并**经候选代理请求一次 Google `generate_204` 验证**，确认确实可用才采用，避免把"占用了端口但并非代理"的程序误判为代理。
+
+如需手动指定：
+```bash
+# Windows (PowerShell)
+$env:GOOGLE_API_PROXY = "http://127.0.0.1:7897"
+# macOS/Linux
+export GOOGLE_API_PROXY="http://127.0.0.1:7897"
+```
+若环境可直连 Google（如海外服务器），代理探测会全部失败并返回 `None`，程序直连访问。
+
+### 配置 LLM 模型链（Claude → GPT → Gemini）
+
+内容组织（`google_docs.py`）使用统一网关 `newapi.gisphere.info`，按 `config.py` 的模型链逐个回退：
+
+```python
+OPENAI_BASE_URL = "https://newapi.gisphere.info/v1"
+LLM_MODEL_CHAIN = [
+    "claude-sonnet-4-6",   # 优先
+    "gpt-5.5",             # 其次
+    "gemini-3.5-flash",    # 最后兜底
+]
+```
+
+任一模型遇到鉴权失败 / 限流 / 报错 / 空响应时自动尝试下一个；密钥放在 `keys/llm_key.txt`。可用模型清单参见同仓库 `LLM_Analysis/MODELS.md`。
+
 ---
 
 ## 核心模块说明
@@ -446,31 +490,43 @@ DOCUMENT_ID = 'your-document-id'
 
 ### 3. google_sheets.py - 表格操作
 **主要函数**:
-- `authorize_credentials()` - 授权Google API
-- `fetch_data()` - 获取表格数据
+- `authorize_credentials()` - 授权Google API（JSON 令牌优先，兼容旧 pickle，加载失败自动重新授权）
+- `fetch_data()` - 获取表格数据（经 `execute_with_retry` 重试）
 - `delete_rows_from_sheet()` - 删除行
 - `append_data_to_sheet()` - 追加数据
 - `update_data_in_sheet()` - 更新数据
 
-### 4. google_docs.py - 文档操作
+### 4. google_http.py - Google 网络层
+**主要函数**:
+- `setup_google_proxy_env()` / `refresh_credentials()` - 代理提示与经代理刷新令牌
+- `build_google_service()` - 构建带代理的 Google API 服务
+- `execute_with_retry()` - 对瞬时网络错误（超时/连接重置/SSL 中断/429/5xx）自动重试；4xx 等立即抛出
+
+### 5. google_docs.py - 文档操作
 **主要函数**:
 - `build_docs_service()` - 构建Docs服务
+- `call_llm_for_content_organization()` - 用 LLM 组织内容（Claude→GPT→Gemini 模型链回退）
 - `append_to_document()` - 追加内容
 - `add_wechat_content_to_doc()` - 添加微信公众号内容
 
-### 5. database.py - 数据库操作
+### 6. database.py - 数据库操作
 **主要函数**:
-- `get_database_connection()` - 获取连接（60秒超时）
+- `get_database_connection()` - 获取连接（默认15秒超时，最多重试3次，连接时隔离代理环境变量确保直连）
 - `get_gisource_data()` - 获取GISource数据
 - `insert_event_to_database()` - 插入事件数据
 
-### 6. email_sender.py - 邮件发送
+### 7. email_sender.py - 邮件发送
 **主要函数**:
-- `send_email()` - 通用邮件发送
+- `send_email()` - 通用邮件发送（有代理时优先 Gmail API，失败回退代理 SMTP，再回退 QQmail）
+- `_send_gmail_via_api()` - 经 Gmail API 发送（与 Sheets 同一代理通路）
 - `send_reminder_emails()` - 批量提醒
 - `send_error_notification()` - 错误通知
 - `send_wechat_notification()` - 微信消息通知
 - `_append_failed_email_record()` - 邮件最终发送失败时落盘记录到 `logs/failed_email_records.txt`
+
+### 8. smtp_proxy.py - 代理 SMTP
+**主要函数**:
+- `create_smtp_client()` - 配置了代理时经 SOCKS5/HTTP 代理连接 Gmail SMTP（备用通道）
 
 ### 7. data_processor.py - 数据处理
 **主要函数**:
@@ -594,10 +650,29 @@ def send_slack_notification(message):
 
 #### Q4: Google API授权失败
 **A:**
-- 删除 `token.pickle` 和 `token.json`
+- 删除 `keys/token_sheets.json`、`keys/token.json`、`keys/token.pickle`
 - 重新运行程序
-- 确保已启用Google Sheets API和Google Docs API
+- 确保已启用 Google Sheets API、Google Docs API 和 Gmail API
 - 检查 `credentials.json` 是否正确
+- 若日志提示"读取 token.pickle 失败（版本不兼容）"，属正常兼容提示，程序会自动改用 JSON 令牌或重新授权
+
+#### Q4b: 连接 Google 超时 / 无法访问
+**A:**
+- 国内环境需开启本地代理（Clash/V2Ray 等）后再运行
+- 程序启动会打印 `✓ 使用代理访问 Google API: http://127.0.0.1:xxxx`；若未出现说明未探测到可用代理
+- 可用环境变量显式指定：`GOOGLE_API_PROXY=http://127.0.0.1:7897`
+- 代理探测会验证能否访问 Google，确认你的代理规则已放行 `googleapis.com`/`gstatic.com`
+
+#### Q4c: 邮件经代理 SMTP 发送失败
+**A:**
+- 部分代理对 SMTP 隧道支持不佳（连上但收不到响应）。此时建议确保 Gmail API 路径可用（优先通道）
+- 确认已安装 `PySocks`（`pip install -r requirements.txt`）
+
+#### Q4d: LLM 内容组织失败 / 模型不可用
+**A:**
+- 检查 `keys/llm_key.txt` 是否存在且有效
+- 模型链 Claude→GPT→Gemini 会自动回退；若全部失败，程序回退到内部默认规则
+- `gemini-3.5-flash` 上游可能被停用而返回 403，属预期，由前两个模型兜住
 
 #### Q5: 中文显示乱码（Windows）
 **A:** 在运行前执行：
@@ -651,13 +726,15 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ### 代码结构
 
-- `config.py` - 所有配置和常量（包含 LLM 接口及 IPv4 强制开关定义）
+- `config.py` - 所有配置和常量（含代理探测、LLM 模型链、IPv4 强制开关定义）
 - `utils.py` - 通用工具函数
 - `logger.py` - 日志模块（结构化运行日志并写入文件，重定向终端流）
-- `google_sheets.py` - Google Sheets操作
-- `google_docs.py` - Google Docs操作
-- `database.py` - 数据库操作
-- `email_sender.py` - 邮件功能
+- `google_http.py` - Google API 代理/HTTP 客户端与请求重试
+- `google_sheets.py` - Google Sheets操作（JSON 令牌 + 重试）
+- `google_docs.py` - Google Docs操作 + LLM 内容组织（模型链）
+- `database.py` - 数据库操作（重试 + 代理隔离）
+- `email_sender.py` - 邮件功能（Gmail API / 代理 SMTP / QQmail）
+- `smtp_proxy.py` - 经代理连接 Gmail SMTP（备用通道）
 - `data_processor.py` - 数据处理逻辑（含缩写与微信内容生成）
 - `main.py` - 主程序流程的10步骤调度
 
@@ -686,11 +763,13 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ### 凭据管理
 
-以下文件包含敏感信息，已被 `.gitignore` 保护：
+以下文件包含敏感信息，**务必确保已被 `.gitignore` 保护、切勿提交**：
 - `keys/credentials.json` - Google API凭据
-- `keys/token.pickle` - Google Sheets令牌
+- `keys/token_sheets.json` - Sheets + Gmail 令牌（JSON）
 - `keys/token.json` - Google Docs令牌
+- `keys/token.pickle` - 旧版令牌
 - `keys/email_credentials.txt` - 邮箱密码
+- `keys/llm_key.txt` - LLM 网关密钥
 - `keys/sql_credentials.txt` - 数据库密码
 
 **请勿将这些文件提交到版本控制系统！**
@@ -720,7 +799,24 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ## 版本历史
 
-### v2.1.0 (当前版本 - 2026-05-02)
+### v2.2.1 (当前版本 - 2026-06-28)
+- 🐛 修复 `select_row_to_process`：无 Soon 行时直接选择截止日期最近的一条；并修复"候选只有 1 个时权重数量不匹配导致崩溃"的问题
+- ⚡ 消除重复请求：`update_google_sheets`/`validate_selected_row` 不再重复整表取数；Google Docs 多处"先取结构再重复 GET 取文本"改为从同一份文档结构抽取文本（`extract_text_from_document`）
+- 🧹 删除未被调用的死函数 `generate_and_send_wechat_message`
+- 🛡️ `adjust_data_to_columns` 对超长行截断，避免 DataFrame 列数不匹配；`select_row_to_process` 显式 `.copy()` 消除 SettingWithCopy 告警；清理 `create_job_title` 的空操作
+- ⏳ 待确认（暂未改动）：`load_and_clean_data` 删除行索引 `x+2` 与 `update_google_sheets` 的 `x+1` 不一致（疑似 off-by-one）；`database.py` 中 `GISource` 与 `TEST.GISource` 的 schema 前缀不一致
+
+### v2.2.0 (2026-06-28)
+- 🌐 **网络代理支持**：新增 `google_http.py`，自动探测本地代理并经代理访问 Google；代理探测后会请求 `generate_204` 验证可用性，避免误判非代理端口
+- ✉️ **Gmail API 发送**：检测到代理时优先经 Gmail API 发信（与 Sheets 同一代理通路），失败回退代理 SMTP（`smtp_proxy.py`）/ QQmail
+- 🔐 **令牌改用 JSON**：Sheets/Gmail 令牌存为可移植的 `token_sheets.json`，跨 google-auth 版本均可加载；加载失败优雅重新授权而非崩溃（兼容旧 `token.pickle`）
+- 🔁 **请求重试增强**：`execute_with_retry` 覆盖超时/连接重置/SSL 中断/429/5xx 等瞬时错误，4xx 立即失败
+- 🤖 **LLM 模型回退链**：内容组织优先 Claude，其次 GPT，最后 Gemini（`LLM_MODEL_CHAIN`，统一走 `newapi` 网关），任一失败/空响应自动切换
+- 💾 **数据库连接加固**：改用 `connection_timeout` + 3 次重试，连接期间隔离代理环境变量确保直连
+- ⚡ **取数优化**：`load_and_clean_data` 每张表只请求一次（原先重复请求）
+- 🔑 LLM 密钥文件由 `openai_key.txt` 改为 `llm_key.txt`；新增依赖 `PySocks`
+
+### v2.1.0 (2026-05-02)
 - ✨ 新增 Gmail -> QQmail 自动回退发送链路
 - 🔐 QQmail 改为官方推荐 `465 + SSL` 连接模式
 - 📝 新增邮件失败落盘记录（`logs/failed_email_records.txt`，追加写入）
@@ -752,6 +848,6 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ---
 
-**最后更新**: 2026-05-02  
+**最后更新**: 2026-06-28  
 **维护者**: GISource团队  
 **项目状态**: 生产就绪 ✅

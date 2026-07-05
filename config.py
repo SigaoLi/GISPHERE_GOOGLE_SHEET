@@ -4,13 +4,18 @@
 """
 import os
 import platform
+import socket
+from urllib.parse import urlparse
 import pytz
 
 # 系统信息
 SYSTEM_PLATFORM = platform.system()  # 'Windows', 'Darwin' (macOS), 'Linux'
 
 # Google Sheets API 配置
-SCOPES_SHEETS = ['https://www.googleapis.com/auth/spreadsheets']
+SCOPES_SHEETS = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/gmail.send',
+]
 SCOPES_DOCS = ['https://www.googleapis.com/auth/documents']
 SPREADSHEET_ID = '1LcfxcTCuj9ZJXXMxyFQwt-xnbAviNP8j9oDr6OG5-Go'
 DOCUMENT_ID = '1PhNqalVi-5BWEiqANN4NAw26V3c-JcJpjrtQJVgenvY'
@@ -27,8 +32,11 @@ KEYS_DIR = os.path.join(BASE_DIR, 'keys')
 CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'credentials.json')
 TOKEN_PICKLE_FILE = os.path.join(KEYS_DIR, 'token.pickle')
 TOKEN_JSON_FILE = os.path.join(KEYS_DIR, 'token.json')
+# Sheets/Gmail 凭据改用可移植的 JSON 存储（避免 pickle 跨 google-auth 版本无法加载）
+TOKEN_SHEETS_JSON_FILE = os.path.join(KEYS_DIR, 'token_sheets.json')
 EMAIL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'email_credentials.txt')
 GROUP_MEMBERS_FILE = os.path.join(KEYS_DIR, 'group_members.txt')
+LLM_KEY_FILE = os.path.join(KEYS_DIR, 'llm_key.txt')
 SQL_CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'sql_credentials.txt')
 
 # SMTP 配置（主通道 + QQmail备用通道）
@@ -273,10 +281,69 @@ LABEL_COLUMNS = ["Physical_Geo", "Human_Geo", "Urban", "GIS", "RS", "GNSS"]
 REQUIRED_COLUMNS = ["Source", "Deadline", "Country_CN", "University_CN", "University_EN", "Direction"]
 
 # LLM 配置
-OPENAI_MODEL = "gpt-5-chat-latest"
-OPENAI_BASE_URL = "https://oneapi.gisphere.info/v1"
+OPENAI_BASE_URL = "https://newapi.gisphere.info/v1"
+# LLM 模型回退链：优先 Claude，其次 GPT，最后 Gemini（统一走 newapi 网关，OpenAI 兼容接口）。
+# 参考 LLM_Analysis 的 TEXT_MODEL_CHAIN：任一模型不可用（鉴权/限流/错误/空响应）时自动尝试下一个。
+LLM_MODEL_CHAIN = [
+    "claude-sonnet-4-6",
+    "gpt-5.5",
+    "gemini-3.5-flash",
+]
+# 向后兼容别名（旧代码/日志仍引用 OPENAI_MODEL = 首选模型）
+OPENAI_MODEL = LLM_MODEL_CHAIN[0]
 
 # 日志文件夹路径
 LLM_LOGS_DIR = os.path.join(BASE_DIR, 'llm_logs')
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 FAILED_EMAIL_LOG_FILE = os.path.join(LOGS_DIR, 'failed_email_records.txt')
+
+
+def _verify_proxy(proxy_url, timeout=2.0):
+    """验证候选地址确实是个能访问 Google 的 HTTP 代理。
+
+    先做快速 TCP 连通性检查；再经该代理请求 Google 的 generate_204，
+    返回 204/200 才认定为可用代理，避免把"恰好占用了常见端口、但并非代理"的
+    服务（如其它本地程序占用 1080/1087）误判为代理而劫持全部 Google 流量。
+    """
+    parsed = urlparse(proxy_url)
+    host, port = parsed.hostname or '127.0.0.1', parsed.port
+    try:
+        with socket.create_connection((host, port), timeout=0.3):
+            pass
+    except (OSError, socket.timeout):
+        return False
+
+    try:
+        import requests
+        resp = requests.get(
+            'https://www.gstatic.com/generate_204',
+            proxies={'http': proxy_url, 'https': proxy_url},
+            timeout=timeout,
+        )
+        return resp.status_code in (200, 204)
+    except Exception:
+        return False
+
+
+def _detect_local_proxy():
+    """自动检测本地代理（Clash/V2Ray 等常见端口），或通过环境变量显式指定。
+
+    环境变量为显式配置，直接采用；端口探测则需经 _verify_proxy 验证可用后才采用。
+    """
+    explicit = (
+        os.getenv('GOOGLE_API_PROXY')
+        or os.getenv('HTTPS_PROXY')
+        or os.getenv('HTTP_PROXY')
+    )
+    if explicit:
+        return explicit
+
+    for port in (7897, 7890, 1087, 1080, 10809, 33210):
+        candidate = f'http://127.0.0.1:{port}'
+        if _verify_proxy(candidate):
+            return candidate
+    return None
+
+
+# Google API 代理（国内网络访问 Google 服务通常需要）
+GOOGLE_API_PROXY = _detect_local_proxy()

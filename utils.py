@@ -1,6 +1,7 @@
 """
 工具模块 - 通用辅助函数
 """
+import warnings
 import pandas as pd
 import inflect
 from datetime import datetime, date, timedelta
@@ -14,7 +15,11 @@ p = inflect.engine()
 def is_date(string):
     """检查字符串是否为日期格式"""
     try:
-        pd.to_datetime(string)
+        with warnings.catch_warnings():
+            # 本函数的用途就是"试解析"，对非日期文本无法推断格式属预期，
+            # 只在此处局部静音，不做全局压制
+            warnings.simplefilter('ignore')
+            pd.to_datetime(string)
         return True
     except (ValueError, TypeError):
         return False
@@ -196,10 +201,14 @@ def format_period_title(week_start, week_end):
 
 
 def adjust_data_to_columns(data, column_headers):
-    """调整数据列数以匹配标题行"""
+    """调整数据列数以匹配标题行（不足补 None，超出则截断，避免 DataFrame 列数不匹配）"""
+    n = len(column_headers)
     adjusted_data = []
     for row in data:
-        adjusted_row = row + [None] * (len(column_headers) - len(row))
+        if len(row) >= n:
+            adjusted_row = row[:n]
+        else:
+            adjusted_row = row + [None] * (n - len(row))
         adjusted_data.append(adjusted_row)
     return adjusted_data
 

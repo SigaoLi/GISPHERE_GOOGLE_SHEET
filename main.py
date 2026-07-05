@@ -18,9 +18,9 @@ if _FORCE_IPV4:
     socket.getaddrinfo = ipv4_only_getaddrinfo
 
 import sys
+import warnings
 import pandas as pd
 import numpy as np
-import warnings
 from datetime import datetime
 
 # 本地模块导入
@@ -40,10 +40,11 @@ from utils import (
     format_period_title
 )
 from google_sheets import (
-    fetch_data, 
+    fetch_data,
     delete_rows_from_sheet,
     append_data_to_sheet,
-    update_data_in_sheet
+    update_data_in_sheet,
+    batch_update_data_in_sheet
 )
 from database import (
     get_database_connection,
@@ -73,8 +74,8 @@ from logger import (
     restore_print_logging
 )
 
-# 禁止显示警告
-warnings.filterwarnings('ignore')
+# 不做全局压制警告：弃用告警是依赖升级前的唯一预警信号
+# （历史教训：applymap 的弃用警告曾被全局 ignore 吞掉）
 
 # 配置pandas显示选项
 pd.set_option('display.max_columns', None)
@@ -201,45 +202,56 @@ def get_operator_name(group_members):
     return operator_input
 
 
+def fetch_dataframe(range_name):
+    """拉取整表并构建 DataFrame
+
+    整表拉取为空（表名错/权限/网络问题）时给出明确报错；
+    只有表头、零数据行是合法状态（如 Filled 刚清空），返回空 DataFrame。
+    """
+    raw = fetch_data(range_name)
+    if not raw:
+        raise RuntimeError(f"表 '{range_name}' 拉取为空，请检查表名、访问权限或网络")
+    headers = raw[0]
+    data = adjust_data_to_columns(raw[1:], headers)
+    return pd.DataFrame(data, columns=headers), headers
+
+
 def load_and_clean_data():
     """加载并清理Google Sheets数据"""
     print("步骤 1: 从Google Sheets获取数据...")
     log_program_run('1', '开始从Google Sheets获取数据', 'info')
-    
-    # 获取Unfilled数据
+
+    # 获取Unfilled / Filled 数据（每个表只请求一次）
     unfilled_range_name = 'Unfilled'
-    unfilled_headers = fetch_data(unfilled_range_name)[0]
-    unfilled_data_raw = fetch_data(unfilled_range_name)[1:]
-    unfilled_data_adjusted = adjust_data_to_columns(unfilled_data_raw, unfilled_headers)
-    unfilled_data = pd.DataFrame(unfilled_data_adjusted, columns=unfilled_headers)
-    
-    # 获取Filled数据（用于检查重复）
+    unfilled_data, unfilled_headers = fetch_dataframe(unfilled_range_name)
+
     filled_range_name = 'Filled'
-    filled_headers = fetch_data(filled_range_name)[0]
-    filled_data_raw = fetch_data(filled_range_name)[1:]
-    filled_data_adjusted = adjust_data_to_columns(filled_data_raw, filled_headers)
-    filled_data = pd.DataFrame(filled_data_adjusted, columns=filled_headers)
+    filled_data, _ = fetch_dataframe(filled_range_name)
     
     # 保存原始Deadline值用于重复检查（在日期转换之前）
     unfilled_deadline_original = unfilled_data['Deadline'].astype(str).str.strip()
     filled_deadline_original = filled_data['Deadline'].astype(str).str.strip() if 'Deadline' in filled_data.columns else pd.Series()
     
     # ===== 条件1: 删除过期行 =====
-    # 只对非"Soon"的值进行日期转换
+    # 用临时序列解析日期做过期判断，不改写 unfilled_data 本身：
+    # Deadline 列含 'Soon' 等非日期文本，且该 df 后续会原样写回表格，
+    # 原地转成 Timestamp/NaT 会导致写回时 JSON 序列化失败或冲掉原文本
     mask_not_soon = ~unfilled_data['Deadline'].astype(str).str.strip().isin(['Soon', 'soon', 'SOON', '尽快申请'])
-    unfilled_data.loc[mask_not_soon, 'Deadline'] = pd.to_datetime(
-        unfilled_data.loc[mask_not_soon, 'Deadline'], 
-        errors='coerce'
-    )
-    
-    # 获取当前日期（时区无关的date对象）
-    now = datetime.now(CHINA_TZ).date()
-    
-    # 找出过期的行（排除"Soon"行）
-    expired_rows = unfilled_data.index[
-        (unfilled_data['Deadline'].notna()) & 
-        (unfilled_data['Deadline'].apply(lambda x: x.date() if hasattr(x, 'date') else None) < now)
-    ].tolist()
+    with warnings.catch_warnings():
+        # 该列本就可能混有 'rolling' 等非日期文本，无法推断统一格式属预期
+        # （errors='coerce' 兜底为 NaT），仅在此局部静音，不做全局压制
+        warnings.simplefilter('ignore', UserWarning)
+        deadline_parsed = pd.to_datetime(
+            unfilled_data['Deadline'].where(mask_not_soon),
+            errors='coerce'
+        )
+
+    # 获取当前日期（时区无关，转为 Timestamp 以便与 datetime64 序列比较；
+    # 不用 .dt.date：全 NaT 时其结果会被推断回 datetime64，与 date 比较抛 TypeError）
+    today = pd.Timestamp(datetime.now(CHINA_TZ).date())
+
+    # 找出过期的行（'Soon' 及无法解析的值为 NaT，NaT 比较恒为 False 自动排除）
+    expired_rows = unfilled_data.index[deadline_parsed < today].tolist()
     
     # ===== 条件2: 删除与Filled重复的行 =====
     # 检查字段: Deadline, Direction, University_EN, Contact_Email
@@ -278,8 +290,8 @@ def load_and_clean_data():
     # ===== 合并两种删除条件 =====
     all_rows_to_delete = list(set(expired_rows + duplicate_rows))
     
-    # 转换为Google Sheets行号（索引+1是因为表头，再+1是因为索引从0开始）
-    rows_to_delete_sheet = [x + 2 for x in all_rows_to_delete]
+    # 转换为 deleteDimension 的 0-based startIndex：表头占 index 0，数据索引 x 对应 x+1
+    rows_to_delete_sheet = [x + 1 for x in all_rows_to_delete]
     
     if rows_to_delete_sheet:
         # 分别记录删除原因
@@ -298,20 +310,11 @@ def load_and_clean_data():
             'duplicate_count': duplicate_count
         })
         # 重新获取数据
-        unfilled_data_raw = fetch_data(unfilled_range_name)[1:]
-        unfilled_data_adjusted = adjust_data_to_columns(unfilled_data_raw, unfilled_headers)
-        unfilled_data = pd.DataFrame(unfilled_data_adjusted, columns=unfilled_headers)
+        unfilled_data, unfilled_headers = fetch_dataframe(unfilled_range_name)
     else:
         print("   没有过期或重复的行需要删除")
         log_program_run('1', '没有过期或重复的行需要删除', 'info')
-    
-    # 获取Filled数据
-    filled_range_name = 'Filled'
-    filled_headers = fetch_data(filled_range_name)[0]
-    filled_data_raw = fetch_data(filled_range_name)[1:]
-    filled_data_adjusted = adjust_data_to_columns(filled_data_raw, filled_headers)
-    filled_data = pd.DataFrame(filled_data_adjusted, columns=filled_headers)
-    
+
     print("✓ 数据加载完成\n")
     log_program_run('1', '数据加载完成', 'success', {
         'unfilled_rows': len(unfilled_data),
@@ -353,12 +356,13 @@ def update_university_info(unfilled_data):
                         unfilled_data.at[index, 'Country_CN'] = latest_match['Country_CN']
                         modified_rows.append(index)
         
-        # 更新修改的行到Google Sheets
-        modified_rows = list(set(modified_rows))
-        for row in modified_rows:
-            range_name = f'Unfilled!A{row + 2}:Z{row + 2}'
-            update_data = [unfilled_data.iloc[row].tolist()]
-            update_data_in_sheet(range_name, update_data)
+        # 更新修改的行到Google Sheets：一次 batchUpdate 写回全部行
+        # 范围只给锚点单元格，API 按 values 实际宽度写入（表列数 >26，写死 A:Z 会报错）
+        modified_rows = sorted(set(modified_rows))
+        batch_update_data_in_sheet([
+            {'range': f'Unfilled!A{row + 2}', 'values': [unfilled_data.iloc[row].tolist()]}
+            for row in modified_rows
+        ])
         
         print(f"✓ 更新了 {len(modified_rows)} 行大学信息\n")
         log_program_run('2', f'更新了 {len(modified_rows)} 行大学信息', 'success', {
@@ -451,8 +455,8 @@ def select_row_to_process(unfilled_data):
     deadline_str = filtered_data['Deadline'].astype(str).str.strip()
     soon_rows = filtered_data[deadline_str.isin(['Soon', 'soon', 'SOON', '尽快申请'])]
     
-    # 移除Soon行进行截止日期计算
-    deadline_data = filtered_data[~filtered_data.index.isin(soon_rows.index)]
+    # 移除Soon行进行截止日期计算（显式 copy，避免 SettingWithCopy 警告）
+    deadline_data = filtered_data[~filtered_data.index.isin(soon_rows.index)].copy()
     deadline_data['Deadline'] = pd.to_datetime(deadline_data['Deadline'], errors='coerce')
     
     # 找出最近的截止日期
@@ -460,50 +464,38 @@ def select_row_to_process(unfilled_data):
         (deadline_data['Deadline'].dt.date >= now) & (deadline_data['Deadline'].notna())
     ].nsmallest(1, 'Deadline')
     
-    index_choices = []
-    weights = []
-    
-    # Soon行有80%的概率
-    if not soon_rows.empty:
-        random_soon_index = soon_rows.sample(n=1).index[0]
-        index_choices.append(random_soon_index)
-        weights.append(0.8)
-    
-    # 最近截止日期有10%的概率
-    if not nearest_deadline.empty:
-        index_choices.append(nearest_deadline.index[0])
-        weights.append(0.1)
-    
-    # 随机有效行有10%的概率
     valid_rows = deadline_data[deadline_data['Deadline'].dt.date >= now]
-    if not valid_rows.empty:
-        random_valid_index = valid_rows.sample(n=1).index[0]
-        index_choices.append(random_valid_index)
-        weights.append(0.1)
-    
-    # 调整权重
-    if soon_rows.empty:
-        weights = [0.9, 0.1]
-    
-    # 归一化权重
-    weights = [float(w) / sum(weights) for w in weights]
-    
-    # 选择行
-    if index_choices:
+
+    if not soon_rows.empty:
+        # 有 Soon 行：加权随机（Soon 80% / 最近截止 10% / 随机有效 10%）
+        # 仅对实际存在的候选累计权重，避免权重数量与候选数量不一致
+        index_choices = [soon_rows.sample(n=1).index[0]]
+        weights = [0.8]
+        if not nearest_deadline.empty:
+            index_choices.append(nearest_deadline.index[0])
+            weights.append(0.1)
+        if not valid_rows.empty:
+            index_choices.append(valid_rows.sample(n=1).index[0])
+            weights.append(0.1)
+        weights = [float(w) / sum(weights) for w in weights]
         selected_index = np.random.choice(index_choices, p=weights)
-        selected_row = filtered_data.loc[selected_index]
-        selected_row = pd.DataFrame(selected_row).transpose()
-        print("✓ 已选择数据行\n")
-        log_program_run('4', '已选择数据行', 'success', {
-            'selected_index': int(selected_index),
-            'source': selected_row['Source'].iloc[0] if 'Source' in selected_row.columns else None,
-            'direction': selected_row['Direction'].iloc[0] if 'Direction' in selected_row.columns else None
-        })
-        return selected_row, filtered_data
+    elif not nearest_deadline.empty:
+        # 无 Soon 行：直接选择截止日期最近的一条
+        selected_index = nearest_deadline.index[0]
     else:
         print("⚠ 没有有效数据可选择")
         log_program_run('4', '没有有效数据可选择', 'warning')
         return None, filtered_data
+
+    selected_row = filtered_data.loc[selected_index]
+    selected_row = pd.DataFrame(selected_row).transpose()
+    print("✓ 已选择数据行\n")
+    log_program_run('4', '已选择数据行', 'success', {
+        'selected_index': int(selected_index),
+        'source': selected_row['Source'].iloc[0] if 'Source' in selected_row.columns else None,
+        'direction': selected_row['Direction'].iloc[0] if 'Direction' in selected_row.columns else None
+    })
+    return selected_row, filtered_data
 
 
 def validate_selected_row(selected_row, group_members, unfilled_data):
@@ -536,8 +528,8 @@ def validate_selected_row(selected_row, group_members, unfilled_data):
         
         if matching_rows:
             row_index = matching_rows[0]
-            # 获取Error列的索引（假设在表头中）
-            unfilled_headers = fetch_data('Unfilled')[0]
+            # 获取Error列的索引（复用已加载的表头，避免重复请求整表）
+            unfilled_headers = list(unfilled_data.columns)
             if 'Error' in unfilled_headers:
                 error_col_index = unfilled_headers.index('Error')
                 error_col_letter = column_index_to_letter(error_col_index)
@@ -630,11 +622,8 @@ def update_google_sheets(selected_row, unfilled_range_name, filled_range_name):
     source_to_delete = selected_row['Source'].values[0]
     direction_to_delete = selected_row['Direction'].values[0]
     
-    # 重新获取unfilled_data以找到正确的索引
-    unfilled_headers = fetch_data(unfilled_range_name)[0]
-    unfilled_data_raw = fetch_data(unfilled_range_name)[1:]
-    unfilled_data_adjusted = adjust_data_to_columns(unfilled_data_raw, unfilled_headers)
-    unfilled_data = pd.DataFrame(unfilled_data_adjusted, columns=unfilled_headers)
+    # 重新获取unfilled_data以找到正确的索引（每张表只请求一次）
+    unfilled_data, _ = fetch_dataframe(unfilled_range_name)
     
     rows_to_delete = unfilled_data.index[
         (unfilled_data['Source'] == source_to_delete) & 
@@ -653,8 +642,9 @@ def update_google_sheets(selected_row, unfilled_range_name, filled_range_name):
         else:
             return value
     
-    converted_row = selected_row.applymap(convert_value)
-    data_to_append = [converted_row.iloc[0].tolist()]
+    # 纯 Python 逐格转换：applymap 在 pandas>=2.1 弃用、3.0 移除，
+    # 替代品 DataFrame.map 又要求 >=2.1，多人环境 pandas 版本不一，直接绕开
+    data_to_append = [[convert_value(v) for v in selected_row.iloc[0]]]
     append_data_to_sheet(filled_range_name, data_to_append)
     
     print("✓ Google Sheets更新完成\n")
@@ -662,55 +652,6 @@ def update_google_sheets(selected_row, unfilled_range_name, filled_range_name):
         'deleted_from_unfilled': len(rows_to_delete),
         'added_to_filled': True
     })
-
-
-def generate_and_send_wechat_message(selected_row, new_event_id, operator, group_members):
-    """生成并发送微信群消息"""
-    print("步骤 8: 生成微信消息...")
-    log_program_run('8', '开始生成微信消息', 'info')
-    
-    # 生成缩写
-    abbreviation = generate_abbreviation(selected_row.iloc[0])
-    
-    if not abbreviation:
-        print("⚠ 无法生成职位缩写")
-        log_program_run('8', '无法生成职位缩写', 'error')
-        return None
-    
-    # 生成微信群消息
-    text_output = generate_wechat_group_text(selected_row.iloc[0], abbreviation, new_event_id)
-    
-    print("微信群消息:")
-    print("-" * 60)
-    print(text_output)
-    print("-" * 60)
-    print()
-    
-    # 发送邮件通知
-    direction_content = selected_row['Direction'].values[0]
-    current_date_china = datetime.now(CHINA_TZ).strftime("%Y-%m-%d")
-    
-    recipient_name = operator if operator in group_members else "GISphere"
-    receiver_email = group_members.get(recipient_name, list(group_members.values())[0])
-    
-    email_sent = send_wechat_notification(receiver_email, recipient_name, text_output, direction_content, current_date_china)
-    if email_sent:
-        print(f"✓ 已发送微信消息通知到 {recipient_name}\n")
-        log_program_run('8', f'已发送微信消息通知到 {recipient_name}', 'success', {
-            'recipient': recipient_name,
-            'event_id': new_event_id,
-            'abbreviation': abbreviation
-        })
-    else:
-        print(f"⚠ 邮件发送失败，但微信消息已生成。请手动通知 {recipient_name}\n")
-        log_program_run('8', f'邮件发送失败: {recipient_name}', 'warning', {
-            'recipient': recipient_name,
-            'event_id': new_event_id,
-            'abbreviation': abbreviation,
-            'email_sent': False
-        })
-    
-    return text_output, abbreviation
 
 
 def add_to_wechat_official_account(selected_row, abbreviation):
@@ -849,6 +790,7 @@ def main():
         update_google_sheets(selected_row, unfilled_range_name, filled_range_name)
         
         # 步骤8: 生成微信群消息内容和缩写（不发送邮件）
+        print("步骤 8: 生成职位缩写...")
         abbreviation = generate_abbreviation(selected_row.iloc[0])
         
         if not abbreviation:

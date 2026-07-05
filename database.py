@@ -2,24 +2,14 @@
 数据库模块 - 处理MySQL数据库操作
 """
 import configparser
-import threading
+import os
+import time
 import mysql.connector
 from mysql.connector import Error
 from config import SQL_CREDENTIALS_FILE
 
 
-def connect_to_database(config, result):
-    """连接到MySQL数据库的线程函数"""
-    try:
-        conn = mysql.connector.connect(**config)
-        cursor = conn.cursor()
-        result['connection'] = conn
-        result['cursor'] = cursor
-    except mysql.connector.Error as err:
-        result['error'] = err
-
-
-def get_database_connection(timeout=60):
+def get_database_connection(timeout=15):
     """
     获取数据库连接
     Args:
@@ -45,43 +35,59 @@ def get_database_connection(timeout=60):
         print(f"⚠ 无法读取配置文件 {SQL_CREDENTIALS_FILE}，请检查文件编码")
         return None, None
     
-    # MySQL配置
+    host = config['MySQL']['host']
     mysql_config = {
-        'host': config['MySQL']['host'],
+        'host': host,
         'port': config['MySQL'].getint('port', 3306),
         'user': config['MySQL']['user'],
         'password': config['MySQL']['password'],
         'database': config['MySQL']['database'],
-        'ssl_disabled': True  # 禁用SSL以避免版本不匹配错误
+        'ssl_disabled': True,
+        'connection_timeout': timeout,
     }
-    
-    # 使用字典存储连接结果
-    result = {}
-    
-    # 创建连接线程
-    db_thread = threading.Thread(target=connect_to_database, args=(mysql_config, result))
-    db_thread.start()
-    db_thread.join(timeout=timeout)
-    
-    if 'error' in result:
-        print(f"Error connecting to database: {result['error']}")
-        return None, None
-    elif 'connection' in result:
-        return result['connection'], result['cursor']
-    else:
-        print("Connection to the database timed out.")
-        return None, None
+
+    # 确保 MySQL 直连，不受系统/全局代理环境变量影响
+    saved_proxy = {k: os.environ.get(k) for k in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy')}
+    for key in saved_proxy:
+        os.environ.pop(key, None)
+    os.environ['NO_PROXY'] = host
+    os.environ['no_proxy'] = host
+
+    last_error = None
+    try:
+        for attempt in range(1, 4):
+            try:
+                conn = mysql.connector.connect(**mysql_config)
+                cursor = conn.cursor()
+                return conn, cursor
+            except mysql.connector.Error as err:
+                last_error = err
+                if attempt < 3:
+                    print(f"   数据库连接失败，2 秒后重试（{attempt}/3）...")
+                    time.sleep(2)
+    finally:
+        for key, value in saved_proxy.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        os.environ.pop('NO_PROXY', None)
+        os.environ.pop('no_proxy', None)
+
+    print(f"Error connecting to database: {last_error}")
+    return None, None
 
 
 def clean_university_names(cursor, conn):
     """清除University_Name_EN列中末尾的多余空格"""
-    cursor.execute("UPDATE TEST.new_Universities SET University_Name_EN = RTRIM(University_Name_EN)")
+    # 库名统一由 sql_credentials.txt 的 database 决定，不在 SQL 里写死
+    cursor.execute("UPDATE new_Universities SET University_Name_EN = RTRIM(University_Name_EN)")
     conn.commit()
 
 
 def get_gisource_data(cursor):
     """从数据库中获取GISource表的数据"""
-    cursor.execute("SELECT University_EN, University_CN, Country_CN FROM TEST.GISource")
+    cursor.execute("SELECT University_EN, University_CN, Country_CN FROM GISource")
     return cursor.fetchall()
 
 
@@ -90,7 +96,7 @@ def check_universities_exist(cursor, university_list):
     if not university_list:
         return set()
     
-    query = "SELECT University_Name_EN FROM TEST.new_Universities WHERE University_Name_EN IN (%s)"
+    query = "SELECT University_Name_EN FROM new_Universities WHERE University_Name_EN IN (%s)"
     format_strings = ','.join(['%s'] * len(university_list))
     cursor.execute(query % format_strings, tuple(university_list))
     existing_universities = cursor.fetchall()

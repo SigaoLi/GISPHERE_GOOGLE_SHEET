@@ -5,12 +5,14 @@ import os
 import re
 import pandas as pd
 from datetime import datetime
-from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from config import SCOPES_DOCS, DOCUMENT_ID, TOKEN_JSON_FILE, CREDENTIALS_FILE, BASE_DIR
+from google_http import build_google_service, setup_google_proxy_env, refresh_credentials
+from config import (
+    SCOPES_DOCS, DOCUMENT_ID, TOKEN_JSON_FILE, CREDENTIALS_FILE, BASE_DIR,
+    LLM_KEY_FILE, OPENAI_BASE_URL, OPENAI_MODEL, LLM_MODEL_CHAIN,
+)
 from data_processor import (
     get_job_category, 
     get_time_category, 
@@ -99,18 +101,17 @@ def clean_trailing_spaces(text):
     return '\n'.join(cleaned_lines)
 
 
-def get_openai_key():
-    """从openai_key.txt读取OpenAI API密钥"""
-    key_file = os.path.join(BASE_DIR, 'keys', 'openai_key.txt')
+def get_llm_key():
+    """从 llm_key.txt 读取 LLM API 密钥"""
     try:
-        with open(key_file, 'r', encoding='utf-8') as f:
-            key = f.read().strip()
+        with open(LLM_KEY_FILE, 'r', encoding='utf-8') as f:
+            key = f.read().strip().lstrip('\ufeff')
             return key if key else None
     except FileNotFoundError:
-        print(f"⚠ 未找到openai_key.txt文件")
+        print("⚠ 未找到 llm_key.txt 文件")
         return None
     except Exception as e:
-        print(f"⚠ 读取openai_key.txt失败: {e}")
+        print(f"⚠ 读取 llm_key.txt 失败: {e}")
         return None
 
 
@@ -128,15 +129,14 @@ def call_llm_for_content_organization(existing_content, new_content, date_subtit
     """
     try:
         import openai
-        from config import OPENAI_BASE_URL, OPENAI_MODEL
         from logger import log_llm_conversation
         
-        openai_key = get_openai_key()
-        if not openai_key:
-            print("⚠ 无法获取OpenAI密钥，使用默认规则")
+        api_key = get_llm_key()
+        if not api_key:
+            print("⚠ 无法获取 API 密钥，使用默认规则")
             return None
         
-        client = openai.OpenAI(api_key=openai_key, base_url=OPENAI_BASE_URL)
+        client = openai.OpenAI(api_key=api_key, base_url=OPENAI_BASE_URL)
         
         system_prompt = """你是一个专业的文档编辑助手。你的任务是根据现有的文档内容和新的内容，智能地决定如何组织和插入新内容。
 
@@ -198,27 +198,49 @@ def call_llm_for_content_organization(existing_content, new_content, date_subtit
 
 只输出组织后的完整内容，不要包含任何解释或说明。"""
         
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.1,
-            max_tokens=4000
-        )
-        
-        organized_content = response.choices[0].message.content.strip()
-        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # 模型回退链：优先 Claude，其次 GPT，最后 Gemini；任一失败/空响应自动尝试下一个
+        organized_content = None
+        used_model = None
+        last_error = None
+        for idx, model in enumerate(LLM_MODEL_CHAIN):
+            try:
+                if idx > 0:
+                    print(f"⚠ LLM 模型回退 -> {model}（第 {idx + 1}/{len(LLM_MODEL_CHAIN)} 个）")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=4000
+                )
+                content = response.choices[0].message.content
+                if content and content.strip():
+                    organized_content = content.strip()
+                    used_model = model
+                    break
+                last_error = RuntimeError("空响应内容")
+                print(f"⚠ LLM 返回空响应（模型: {model}）")
+            except Exception as e:
+                last_error = e
+                print(f"⚠ LLM 调用失败（模型: {model}）: {e}")
+
+        if organized_content is None:
+            print(f"⚠ 所有模型均失败: {last_error}，使用默认规则")
+            return None
+
         # 清理行末多余空格（Markdown软换行符）
         organized_content = clean_trailing_spaces(organized_content)
-        
+
         # 记录LLM对话
         log_llm_conversation(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response=organized_content,
-            model=OPENAI_MODEL,
+            model=used_model,
             metadata={
                 'date_subtitle': date_subtitle,
                 'existing_content_length': len(existing_content),
@@ -268,6 +290,7 @@ def build_initial_content_for_new_period(wechat_template_output, date_subtitle, 
 
 def build_docs_service():
     """构建Google Docs服务"""
+    setup_google_proxy_env()
     creds = None
     if os.path.exists(TOKEN_JSON_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_JSON_FILE, SCOPES_DOCS)
@@ -275,7 +298,7 @@ def build_docs_service():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
-                creds.refresh(Request())
+                refresh_credentials(creds)
             except RefreshError:
                 # Token刷新失败（可能被撤销），需要重新授权
                 print("Token已失效，正在打开浏览器进行重新授权...")
@@ -288,22 +311,31 @@ def build_docs_service():
         with open(TOKEN_JSON_FILE, 'w', encoding='utf-8') as token:
             token.write(creds.to_json())
     
-    return build('docs', 'v1', credentials=creds)
+    return build_google_service('docs', 'v1', creds)
 
 
-def retrieve_document_content(service, document_id):
-    """获取文档内容"""
-    document = service.documents().get(documentId=document_id).execute()
+def extract_text_from_document(document):
+    """从已获取的文档结构对象中提取纯文本（不再发起网络请求）"""
     doc_content = document.get('body').get('content')
     text = ""
-    
+
     for element in doc_content:
         if 'paragraph' in element:
             for elem in element['paragraph']['elements']:
                 if 'textRun' in elem and 'content' in elem['textRun']:
                     text += elem['textRun']['content']
-    
+
     return text
+
+
+def retrieve_document_content(service, document_id):
+    """获取文档内容（纯文本）。
+
+    若调用处已通过 documents().get() 拿到完整文档结构，应直接调用
+    extract_text_from_document(document) 复用该结构，避免重复请求整篇文档。
+    """
+    document = service.documents().get(documentId=document_id).execute()
+    return extract_text_from_document(document)
 
 
 def content_exists(service, document_id, content):
@@ -779,10 +811,10 @@ def replace_period_content(service, document_id, date_subtitle, new_content):
     MAX_DELETE_RETRIES = 3
     DELETE_VERIFY_DELAY = 3  # 删除后等待3秒再验证
     
-    # 获取文档内容
+    # 获取文档内容（一次请求，文本与结构复用同一份）
     document = service.documents().get(documentId=document_id).execute()
-    doc_content = retrieve_document_content(service, document_id)
-    
+    doc_content = extract_text_from_document(document)
+
     # 保存原始内容用于验证删除
     original_content = doc_content
     
@@ -813,7 +845,7 @@ def replace_period_content(service, document_id, date_subtitle, new_content):
             # 重新获取文档和索引（因为可能已经有变化）
             if attempt > 1:
                 document = service.documents().get(documentId=document_id).execute()
-                doc_content = retrieve_document_content(service, document_id)
+                doc_content = extract_text_from_document(document)
                 start_index, end_index = find_period_content_indices(document, doc_content, date_subtitle)
                 
                 if start_index is None or end_index is None:
@@ -869,10 +901,10 @@ def replace_period_content(service, document_id, date_subtitle, new_content):
     # 步骤2: 插入新内容
     print("   📝 插入新内容...")
     
-    # 重新获取文档以获取正确的插入位置
+    # 重新获取文档以获取正确的插入位置（一次请求，文本与结构复用同一份）
     document = service.documents().get(documentId=document_id).execute()
-    doc_content = retrieve_document_content(service, document_id)
-    
+    doc_content = extract_text_from_document(document)
+
     # 找到标题后的插入位置
     subtitle_pos = doc_content.find(date_subtitle)
     if subtitle_pos == -1:
@@ -1080,17 +1112,18 @@ def ensure_current_period_exists(date_subtitle):
         tuple: (period_created, message) - period_created 为 True 表示创建了新周期
     """
     service = build_docs_service()
-    doc_content = retrieve_document_content(service, DOCUMENT_ID)
-    
+    # 一次请求拿到文档结构，文本检查与插入位置计算复用同一份
+    document = service.documents().get(documentId=DOCUMENT_ID).execute()
+    doc_content = extract_text_from_document(document)
+
     # 检查周期是否已存在
     if date_subtitle in doc_content:
         return False, f"周期 '{date_subtitle}' 已存在于文档中"
-    
+
     # 周期不存在，创建新周期标题（带格式）
     print(f"📅 创建新周期标题: {date_subtitle}")
-    
-    # 获取文档当前内容以确定插入位置（确保插入到文档最末尾）
-    document = service.documents().get(documentId=DOCUMENT_ID).execute()
+
+    # 复用上面已获取的文档结构确定插入位置（确保插入到文档最末尾）
     doc_body_content = document.get('body').get('content')
     
     # Google Docs API 的 endIndex 是排他的（exclusive），所以减1得到最后一个有效位置

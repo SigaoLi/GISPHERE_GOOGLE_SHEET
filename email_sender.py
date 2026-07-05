@@ -1,6 +1,8 @@
 """
 邮件发送模块 - 处理SMTP邮件发送
+Gmail 在检测到代理时优先经 Gmail API（与 Google Sheets 相同代理通路）发送
 """
+import base64
 import configparser
 import os
 import smtplib
@@ -11,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from config import (
     EMAIL_CREDENTIALS_FILE,
     FAILED_EMAIL_LOG_FILE,
+    GOOGLE_API_PROXY,
     GMAIL_SMTP_SERVER,
     GMAIL_SMTP_PORT,
     GMAIL_SMTP_USE_SSL,
@@ -18,6 +21,9 @@ from config import (
     QQMAIL_SMTP_PORT,
     QQMAIL_SMTP_USE_SSL,
 )
+from smtp_proxy import create_smtp_client
+
+_gmail_api_notice_printed = False
 
 # 重试配置
 MAX_RETRY_ATTEMPTS = 2  # 最大尝试次数（包括首次）
@@ -98,6 +104,27 @@ def _build_message(sender_email, receiver_email, subject, custom_body):
     return message
 
 
+def _send_gmail_via_api(sender_email, receiver_email, receiver_name, subject, custom_body):
+    """经 Gmail API 发送（走与 Google Sheets 相同的代理）"""
+    global _gmail_api_notice_printed
+    from google_sheets import authorize_credentials
+    from google_http import build_google_service, setup_google_proxy_env
+
+    setup_google_proxy_env()
+    if not _gmail_api_notice_printed:
+        print(f"✓ Gmail 经代理 API 发送（{GOOGLE_API_PROXY}）")
+        _gmail_api_notice_printed = True
+
+    creds = authorize_credentials()
+    service = build_google_service('gmail', 'v1', creds)
+
+    message = _build_message(sender_email, receiver_email, subject, custom_body)
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    service.users().messages().send(userId='me', body={'raw': raw}).execute()
+    print(f"[Gmail-API] Email sent successfully to {receiver_name} ({receiver_email})")
+    return True, None
+
+
 def _send_via_provider(
     provider_name,
     smtp_server,
@@ -108,7 +135,8 @@ def _send_via_provider(
     receiver_email,
     receiver_name,
     subject,
-    custom_body
+    custom_body,
+    use_proxy=False,
 ):
     """通过指定 SMTP 通道发送邮件（带重试）"""
     last_error = None
@@ -118,7 +146,9 @@ def _send_via_provider(
         try:
             message = _build_message(username, receiver_email, subject, custom_body)
 
-            if use_ssl:
+            if use_proxy:
+                server = create_smtp_client(smtp_server, smtp_port, use_ssl, timeout=30)
+            elif use_ssl:
                 server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
             else:
                 server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
@@ -173,19 +203,44 @@ def send_email(receiver_email, receiver_name, subject, custom_body):
     """
     try:
         credentials = read_email_credentials()
+        gmail_email = credentials["Gmail"]["email"]
+        gmail_password = credentials["Gmail"]["password"]
 
-        gmail_ok, gmail_error = _send_via_provider(
-            provider_name="Gmail",
-            smtp_server=GMAIL_SMTP_SERVER,
-            smtp_port=GMAIL_SMTP_PORT,
-            use_ssl=GMAIL_SMTP_USE_SSL,
-            username=credentials["Gmail"]["email"],
-            app_password=credentials["Gmail"]["password"],
-            receiver_email=receiver_email,
-            receiver_name=receiver_name,
-            subject=subject,
-            custom_body=custom_body,
-        )
+        gmail_ok, gmail_error = False, None
+
+        if GOOGLE_API_PROXY:
+            for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+                try:
+                    gmail_ok, gmail_error = _send_gmail_via_api(
+                        gmail_email, receiver_email, receiver_name, subject, custom_body
+                    )
+                    break
+                except Exception as e:
+                    gmail_error = e
+                    if attempt < MAX_RETRY_ATTEMPTS:
+                        print(
+                            f"[Gmail-API] Failed (attempt {attempt}/{MAX_RETRY_ATTEMPTS}): {e}"
+                        )
+                        print(f"[Gmail-API] Retrying in {RETRY_DELAY_SECONDS} seconds...")
+                        time.sleep(RETRY_DELAY_SECONDS)
+                    else:
+                        print(f"[Gmail-API] Failed after {MAX_RETRY_ATTEMPTS} attempts: {e}")
+                        print("[Gmail-API] 尝试经代理 SMTP 备用发送...")
+
+        if not gmail_ok:
+            gmail_ok, gmail_error = _send_via_provider(
+                provider_name="Gmail",
+                smtp_server=GMAIL_SMTP_SERVER,
+                smtp_port=GMAIL_SMTP_PORT,
+                use_ssl=GMAIL_SMTP_USE_SSL,
+                username=gmail_email,
+                app_password=gmail_password,
+                receiver_email=receiver_email,
+                receiver_name=receiver_name,
+                subject=subject,
+                custom_body=custom_body,
+                use_proxy=bool(GOOGLE_API_PROXY),
+            )
         if gmail_ok:
             return True
 
