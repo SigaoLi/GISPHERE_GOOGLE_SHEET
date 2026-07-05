@@ -4,6 +4,9 @@
 keys/*
 !keys/email_credentials.txt.example
 !keys/sql_credentials.txt.example
+!keys/group_members.txt.example
+!keys/llm_key.txt.example
+!keys/credentials.json.example
 
 # Python 缓存
 __pycache__/

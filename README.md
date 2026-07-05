@@ -259,8 +259,10 @@ pip install -r requirements.txt
 
 ### 3. 配置文件设置
 
+> 以下每个文件在 `keys/` 下都有对应的 `.example` 模板，复制去掉 `.example` 后缀再填写即可。
+
 #### credentials.json（Google API）
-从 Google Cloud Console 下载
+从 Google Cloud Console 下载（OAuth 桌面应用客户端）
 
 #### email_credentials.txt
 ```ini
@@ -287,6 +289,12 @@ port = 3306
 user = username
 password = password
 database = database_name
+```
+
+#### llm_key.txt
+单行 LLM 网关密钥（`newapi.gisphere.info`）：
+```
+sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 4. 验证安装
@@ -714,9 +722,10 @@ pip install -r requirements.txt
 # 自动检测系统
 SYSTEM_PLATFORM = platform.system()  # 'Windows', 'Darwin', 'Linux'
 
-# 跨平台路径
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
+# 跨平台路径（config.py 位于 src/core/，BASE_DIR 上溯两级指向仓库根）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KEYS_DIR = os.path.join(BASE_DIR, 'keys')
+CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'credentials.json')
 ```
 
 ---
@@ -725,17 +734,18 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ### 代码结构
 
-- `config.py` - 所有配置和常量（含代理探测、LLM 模型链、IPv4 强制开关定义）
-- `utils.py` - 通用工具函数
-- `logger.py` - 日志模块（结构化运行日志并写入文件，重定向终端流）
-- `google_http.py` - Google API 代理/HTTP 客户端与请求重试
-- `google_sheets.py` - Google Sheets操作（JSON 令牌 + 重试）
-- `google_docs.py` - Google Docs操作 + LLM 内容组织（模型链）
-- `database.py` - 数据库操作（重试 + 代理隔离）
-- `email_sender.py` - 邮件功能（Gmail API / 代理 SMTP / QQmail）
-- `smtp_proxy.py` - 经代理连接 Gmail SMTP（备用通道）
-- `data_processor.py` - 数据处理逻辑（含缩写与微信内容生成）
-- `main.py` - 主程序流程的10步骤调度
+- `src/core/config.py` - 所有配置和常量（含代理探测、LLM 模型链、IPv4 强制开关定义）
+- `src/core/utils.py` - 通用工具函数
+- `src/core/logger.py` - 日志模块（结构化运行日志并写入文件，重定向终端流）
+- `src/core/data_processor.py` - 数据处理逻辑（含缩写与微信内容生成）
+- `src/integrations/google_http.py` - Google API 代理/HTTP 客户端与请求重试（service 缓存）
+- `src/integrations/google_sheets.py` - Google Sheets操作（JSON 令牌 + 重试 + 凭据缓存）
+- `src/integrations/google_docs.py` - Google Docs操作 + LLM 内容组织（模型链）
+- `src/integrations/database.py` - 数据库操作（重试 + 代理隔离）
+- `src/integrations/email_sender.py` - 邮件功能（Gmail API / 代理 SMTP / QQmail）
+- `src/integrations/smtp_proxy.py` - 经代理连接 Gmail SMTP（备用通道）
+- `src/tools/check_setup.py` - 环境检查（python -m src.tools.check_setup）
+- `src/main.py` - 主程序流程的10步骤调度
 
 ### 最佳实践
 

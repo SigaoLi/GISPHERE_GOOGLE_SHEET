@@ -1,0 +1,6 @@
+# 组员信息示例文件
+# 使用方法：复制本文件并重命名为 group_members.txt 后填写真实信息
+# 格式：每行一条「姓名,邮箱」（英文逗号分隔）
+# 注意：姓名需与运行程序时输入的操作员姓名一致；支持 UTF-8 / GBK 编码
+张三,zhangsan@example.com
+李四,lisi@example.com
