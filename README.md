@@ -2,7 +2,7 @@
 
 自动化处理GISource学术信息的发布系统，支持Windows、macOS和Linux多平台运行。
 
-**版本**: v2.2.1 | **最后更新**: 2026-06-28
+**版本**: v2.3.0 | **最后更新**: 2026-07-05
 
 ---
 
@@ -42,7 +42,7 @@
 
 ## 系统要求
 
-- Python 3.7 或更高版本（推荐 3.10+）
+- Python 3.8 或更高版本（推荐 3.10+）
 - 稳定的网络连接；**国内环境需本地代理**（Clash/V2Ray 等）以访问 Google，程序会自动探测常见端口（7897/7890/1087/1080/10809/33210）或读取 `HTTPS_PROXY`/`GOOGLE_API_PROXY` 环境变量；显式设置 `GOOGLE_API_PROXY` 会**跳过端口探测**（启动更快，也适用于非常规代理配置；海外直连环境无需任何设置）
 - Google API 访问权限（Google Sheets + Google Docs + Gmail 发送）
 - MySQL 数据库访问权限
@@ -57,7 +57,7 @@
 ### 准备清单
 
 在开始之前，请确保您有：
-- [ ] Python 3.7+ 已安装
+- [ ] Python 3.8+ 已安装
 - [ ] Google账号（用于访问Google Sheets和Docs）
 - [ ] Gmail邮箱（主发送通道）
 - [ ] QQmail邮箱（备用发送通道）
@@ -229,9 +229,7 @@ Google_Sheet/
     ├── logs/                      # 运行日志归档目录（自动生成）
     ├── llm_logs/                  # LLM对话记录目录（自动生成）
     ├── requirements.txt           # Python依赖
-    ├── .gitignore                 # Git配置
-    ├── VERSION.txt                # 版本信息
-    └── Coding.ipynb               # 原始Notebook（参考）
+    └── .gitignore                 # Git配置
 ```
 
 ---
@@ -245,7 +243,7 @@ python --version  # Windows
 python3 --version # macOS/Linux
 ```
 
-确保版本 >= 3.7
+确保版本 >= 3.8
 
 ### 2. 安装依赖包
 
@@ -257,7 +255,7 @@ pip install -r requirements.txt
 - pandas, numpy - 数据处理
 - google-api-python-client - Google API
 - mysql-connector-python - MySQL连接
-- pytz, pycountry, inflect - 工具库
+- pytz, inflect, pypinyin - 工具库
 
 ### 3. 配置文件设置
 
@@ -465,7 +463,7 @@ LLM_MODEL_CHAIN = [
 
 ## 核心模块说明
 
-### 1. config.py - 配置中心
+### 1. src/core/config.py - 配置中心
 **功能**: 集中管理所有配置和常量
 
 **包含内容**:
@@ -475,7 +473,7 @@ LLM_MODEL_CHAIN = [
 - 国家/职位/学科字典
 - 必填字段定义
 
-### 2. utils.py - 工具函数库
+### 2. src/core/utils.py - 工具函数库
 **主要函数**:
 - `is_date()` - 检查字符串是否为日期
 - `read_group_members()` - 读取组员信息
@@ -483,34 +481,35 @@ LLM_MODEL_CHAIN = [
 - `convert_date_to_chinese()` - 日期转中文格式
 - `calculate_week_range()` - 计算本周日期范围
 
-### 3. google_sheets.py - 表格操作
+### 3. src/integrations/google_sheets.py - 表格操作
 **主要函数**:
-- `authorize_credentials()` - 授权Google API（JSON 令牌优先，兼容旧 pickle，加载失败自动重新授权）
+- `authorize_credentials()` - 授权Google API（JSON 令牌优先，兼容旧 pickle，加载失败自动重新授权；凭据进程内缓存）
 - `fetch_data()` - 获取表格数据（经 `execute_with_retry` 重试）
 - `delete_rows_from_sheet()` - 删除行
 - `append_data_to_sheet()` - 追加数据
 - `update_data_in_sheet()` - 更新数据
+- `batch_update_data_in_sheet()` - 批量更新多个范围（合并为一次 API 调用）
 
-### 4. google_http.py - Google 网络层
+### 4. src/integrations/google_http.py - Google 网络层
 **主要函数**:
 - `setup_google_proxy_env()` / `refresh_credentials()` - 代理提示与经代理刷新令牌
-- `build_google_service()` - 构建带代理的 Google API 服务
+- `build_google_service()` - 构建带代理的 Google API 服务（进程内缓存；重试前自动失效重建）
 - `execute_with_retry()` - 对瞬时网络错误（超时/连接重置/SSL 中断/429/5xx）自动重试；4xx 等立即抛出
 
-### 5. google_docs.py - 文档操作
+### 5. src/integrations/google_docs.py - 文档操作
 **主要函数**:
 - `build_docs_service()` - 构建Docs服务
 - `call_llm_for_content_organization()` - 用 LLM 组织内容（Claude→GPT→Gemini 模型链回退）
 - `append_to_document()` - 追加内容
 - `add_wechat_content_to_doc()` - 添加微信公众号内容
 
-### 6. database.py - 数据库操作
+### 6. src/integrations/database.py - 数据库操作
 **主要函数**:
-- `get_database_connection()` - 获取连接（默认15秒超时，最多重试3次，连接时隔离代理环境变量确保直连）
+- `get_database_connection()` - 获取连接（默认15秒超时，最多重试3次，连接时隔离代理环境变量确保直连；库名由 `sql_credentials.txt` 的 `database` 决定，SQL 不写死）
 - `get_gisource_data()` - 获取GISource数据
 - `insert_event_to_database()` - 插入事件数据
 
-### 7. email_sender.py - 邮件发送
+### 7. src/integrations/email_sender.py - 邮件发送
 **主要函数**:
 - `send_email()` - 通用邮件发送（有代理时优先 Gmail API，失败回退代理 SMTP，再回退 QQmail）
 - `_send_gmail_via_api()` - 经 Gmail API 发送（与 Sheets 同一代理通路）
@@ -519,18 +518,23 @@ LLM_MODEL_CHAIN = [
 - `send_wechat_notification()` - 微信消息通知
 - `_append_failed_email_record()` - 邮件最终发送失败时落盘记录到 `logs/failed_email_records.txt`
 
-### 8. smtp_proxy.py - 代理 SMTP
+### 8. src/integrations/smtp_proxy.py - 代理 SMTP
 **主要函数**:
 - `create_smtp_client()` - 配置了代理时经 SOCKS5/HTTP 代理连接 Gmail SMTP（备用通道）
 
-### 7. data_processor.py - 数据处理
+### 9. src/core/data_processor.py - 数据处理
 **主要函数**:
 - `create_sql_table()` - 创建SQL表格数据
 - `generate_wechat_group_text()` - 生成微信群消息
 - `convert_to_wechat_format()` - 转换为公众号格式
 
-### 8. main.py - 主程序
-**功能**: 协调所有模块，控制程序流程
+### 10. src/core/logger.py - 日志
+**主要函数**:
+- `log_program_run()` - 记录结构化运行日志（内存缓冲，结束时归档到 `logs/`）
+- `log_llm_conversation()` - LLM 对话记录（`llm_logs/`）
+
+### 11. src/main.py - 主流程
+**功能**: 协调所有模块，控制程序流程；`fetch_dataframe()` 统一整表拉取与空表防御
 
 **主要流程**:
 1. 加载数据（Google Sheets）
@@ -794,7 +798,17 @@ CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
 
 ## 版本历史
 
-### v2.2.1 (当前版本 - 2026-06-28)
+### v2.3.0 (当前版本 - 2026-07-05)
+- 📁 **目录重组**：源码迁入 `src/` 包（core / integrations / tools，相对导入），入口统一 `python run.py`，环境检查改为 `python -m src.tools.check_setup`
+- 🐛 **修复删除行 off-by-one**：`load_and_clean_data` 行号换算 `+2` 修正为 `+1`（实测原实现会误删目标行的下一行）
+- 🐛 **修复写回范围**：`update_university_info` 写死 `A:Z`（表 31 列必报错）改为锚点单元格写法，并合并为一次 `values.batchUpdate`
+- 🐛 **Deadline 不再原地转 Timestamp**：过期判断改用临时解析序列，写回不再崩溃、不再冲掉 'Soon'/'rolling' 等原文
+- 🛡️ 空表防御：新增 `fetch_dataframe()`，整表拉取为空时给出明确报错
+- ⚡ 凭据与 service 进程内缓存（网络重试时自动重建连接）
+- 🗃️ 数据库表名不再写死 `TEST.` 前缀，统一由 `sql_credentials.txt` 的 `database` 决定
+- 🧹 移除全局警告压制（改定向静音）、`applymap` 改版本无关写法、裸 `except` 收紧、requirements 移除 pycountry/configparser 并加版本上界
+
+### v2.2.1 (2026-06-28)
 - 🐛 修复 `select_row_to_process`：无 Soon 行时直接选择截止日期最近的一条；并修复"候选只有 1 个时权重数量不匹配导致崩溃"的问题
 - ⚡ 消除重复请求：`update_google_sheets`/`validate_selected_row` 不再重复整表取数；Google Docs 多处"先取结构再重复 GET 取文本"改为从同一份文档结构抽取文本（`extract_text_from_document`）
 - 🧹 删除未被调用的死函数 `generate_and_send_wechat_message`
