@@ -406,7 +406,7 @@ table_name = 'Coding_Test'  # 测试环境
 
 ### 修改字典配置
 
-编辑 `config.py` 中的字典：
+编辑 `src/core/config.py` 中的字典：
 
 - **COUNTRY_DICTIONARY** - 国家名称映射（中文→英文）
 - **JOB_DICTIONARY** - 职位类型映射
@@ -429,7 +429,7 @@ JOB_DICTIONARY = {
 
 ### 修改Google Sheets/Docs ID
 
-在 `config.py` 中：
+在 `src/core/config.py` 中：
 
 ```python
 SPREADSHEET_ID = 'your-spreadsheet-id'
@@ -438,7 +438,7 @@ DOCUMENT_ID = 'your-document-id'
 
 ### 配置网络代理（访问 Google）
 
-`config.py` 的 `_detect_local_proxy()` 会按顺序处理：
+`src/core/config.py` 的 `_detect_local_proxy()` 会按顺序处理：
 
 1. 优先读取环境变量 `GOOGLE_API_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY`（显式配置，直接采用）；
 2. 否则探测常见本地代理端口，并**经候选代理请求一次 Google `generate_204` 验证**，确认确实可用才采用，避免把"占用了端口但并非代理"的程序误判为代理。
@@ -454,7 +454,7 @@ export GOOGLE_API_PROXY="http://127.0.0.1:7897"
 
 ### 配置 LLM 模型链（Claude → GPT → Gemini）
 
-内容组织（`google_docs.py`）使用统一网关 `newapi.gisphere.info`，按 `config.py` 的模型链逐个回退：
+内容组织（`src/integrations/google_docs.py`）使用统一网关 `newapi.gisphere.info`，按 `src/core/config.py` 的模型链逐个回退：
 
 ```python
 OPENAI_BASE_URL = "https://newapi.gisphere.info/v1"
@@ -599,15 +599,15 @@ Google Sheets (Unfilled)
 ### 添加新功能
 
 1. **确定功能类型**
-   - 数据处理 → `data_processor.py`
-   - API操作 → `google_sheets.py` 或 `google_docs.py`
-   - 数据库 → `database.py`
-   - 邮件 → `email_sender.py`
-   - 工具函数 → `utils.py`
+   - 数据处理 → `src/core/data_processor.py`
+   - API操作 → `src/integrations/google_sheets.py` 或 `src/integrations/google_docs.py`
+   - 数据库 → `src/integrations/database.py`
+   - 邮件 → `src/integrations/email_sender.py`
+   - 工具函数 → `src/core/utils.py`
 
 2. **在相应模块添加函数**
 
-3. **在main.py中调用**
+3. **在src/main.py中调用**
 
 4. **更新README文档**
 
@@ -619,7 +619,7 @@ Google Sheets (Unfilled)
 def fetch_external_data():
     pass
 
-# 在main.py中导入并使用
+# 在src/main.py中导入并使用
 from api_client import fetch_external_data
 ```
 
