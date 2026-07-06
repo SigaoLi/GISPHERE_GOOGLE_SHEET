@@ -9,10 +9,9 @@ import os
 
 # 确保使用UTF-8编码
 if sys.platform.startswith('win'):
-    # Windows系统设置控制台编码
-    import codecs
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+    # reconfigure 保留行缓冲，print 会实时输出（codecs.getwriter 会导致输出堆积到程序结束）
+    sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+    sys.stderr.reconfigure(encoding='utf-8')
 
 # 添加当前目录到Python路径
 current_dir = os.path.dirname(os.path.abspath(__file__))

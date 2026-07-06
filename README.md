@@ -2,7 +2,7 @@
 
 自动化处理GISource学术信息的发布系统，支持Windows、macOS和Linux多平台运行。
 
-**版本**: v2.3.0 | **最后更新**: 2026-07-05
+**版本**: v2.3.1 | **最后更新**: 2026-07-06
 
 ---
 
@@ -459,7 +459,7 @@ export GOOGLE_API_PROXY="http://127.0.0.1:7897"
 ```python
 OPENAI_BASE_URL = "https://newapi.gisphere.info/v1"
 LLM_MODEL_CHAIN = [
-    "claude-sonnet-4-6",   # 优先
+    "claude-opus-4-5",     # 优先
     "gpt-5.5",             # 其次
     "gemini-3.5-flash",    # 最后兜底
 ]
@@ -808,7 +808,11 @@ CREDENTIALS_FILE = os.path.join(KEYS_DIR, 'credentials.json')
 
 ## 版本历史
 
-### v2.3.0 (当前版本 - 2026-07-05)
+### v2.3.1 (当前版本 - 2026-07-06)
+- 🐛 **修复步骤输出不实时**：`run.py` 的 Windows 编码设置由 `codecs.getwriter` 改为 `sys.stdout.reconfigure(line_buffering=True)`，各步骤 print 即时显示，不再等到程序结束一次性输出
+- 🤖 LLM 模型链首选模型由 `claude-sonnet-4-6` 调整为 `claude-opus-4-5`
+
+### v2.3.0 (2026-07-05)
 - 📁 **目录重组**：源码迁入 `src/` 包（core / integrations / tools，相对导入），入口统一 `python run.py`，环境检查改为 `python -m src.tools.check_setup`
 - 🐛 **修复删除行 off-by-one**：`load_and_clean_data` 行号换算 `+2` 修正为 `+1`（实测原实现会误删目标行的下一行）
 - 🐛 **修复写回范围**：`update_university_info` 写死 `A:Z`（表 31 列必报错）改为锚点单元格写法，并合并为一次 `values.batchUpdate`

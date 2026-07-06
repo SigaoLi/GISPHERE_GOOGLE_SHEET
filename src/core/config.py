@@ -286,7 +286,7 @@ OPENAI_BASE_URL = "https://newapi.gisphere.info/v1"
 # LLM 模型回退链：优先 Claude，其次 GPT，最后 Gemini（统一走 newapi 网关，OpenAI 兼容接口）。
 # 参考 LLM_Analysis 的 TEXT_MODEL_CHAIN：任一模型不可用（鉴权/限流/错误/空响应）时自动尝试下一个。
 LLM_MODEL_CHAIN = [
-    "claude-sonnet-4-6",
+    "claude-opus-4-5",
     "gpt-5.5",
     "gemini-3.5-flash",
 ]
